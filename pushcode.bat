@@ -1,10 +1,8 @@
 @echo off
 setlocal
 
-REM --- Đổi thành nhánh bạn muốn push ---
 set "BRANCH=main"
 
-REM --- Hỏi người dùng nhập commit message ---
 set /p MESSAGE=Nhap thong diep commit: 
 
 if "%MESSAGE%"=="" (
@@ -21,5 +19,6 @@ git commit -m "%MESSAGE%"
 echo Dang push len remote...
 git push origin %BRANCH%
 
-echo Thanh Cong!
-pause
+echo Push Code Len Github Thanh Cong !
+<nul set /p= "Nhan phim bat ky de thoat..."
+pause >nul
