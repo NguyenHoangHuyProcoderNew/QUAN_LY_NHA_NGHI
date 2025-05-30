@@ -1,0 +1,8 @@
+pyinstaller --onefile --noconsole ^
+--icon=logo_app.ico ^
+--add-data "logo_app.ico;." ^
+--add-data "done.wav;." ^
+--add-data "error.wav;." ^
+--add-binary "libzbar-64.dll;." ^
+--add-binary "libiconv.dll;." ^
+APP_KHAI_BAO_LUU_TRU.py
