@@ -21,5 +21,5 @@ git commit -m "%MESSAGE%"
 echo Dang push len remote...
 git push origin %BRANCH%
 
-echo Done!
+echo Thanh Cong!
 pause
