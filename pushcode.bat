@@ -1,13 +1,14 @@
 @echo off
+setlocal
+
 REM --- Đổi thành nhánh bạn muốn push ---
 set "BRANCH=main"
 
-REM --- Thông điệp commit ---
-set "MESSAGE=%~1"
+REM --- Hỏi người dùng nhập commit message ---
+set /p MESSAGE=Nhap thong diep commit: 
 
 if "%MESSAGE%"=="" (
-  echo Vui long nhap thong diep commit.
-  echo Usage: pushcode.bat "Thong diep commit"
+  echo Ban chua nhap thong diep commit. Thoat chuong trinh.
   goto :eof
 )
 
