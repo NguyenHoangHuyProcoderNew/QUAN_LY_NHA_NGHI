@@ -196,8 +196,10 @@ class QRApp:
 
             webcam_index = self.ten_webcams.index(self.webcam_name_var.get())
             cap = cv2.VideoCapture(webcam_index)
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+            # Giảm độ phân giải để mở nhanh hơn
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
 
             qreader = QReader()
             found_data = None
@@ -209,10 +211,12 @@ class QRApp:
                     break
 
                 frame_count += 1
+
+                # Resize để hiển thị mượt và đủ nhìn
                 frame_display = cv2.resize(frame, (640, 360))
 
-                # Chỉ xử lý mỗi 6 frames (giảm tải)
-                if frame_count % 6 == 0:
+                # Quét mỗi 3 frame để tăng tốc độ quét (thay vì 6)
+                if frame_count % 3 == 0:
                     image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     result = qreader.detect_and_decode(image=image_rgb)
                     if result and result[0]:
@@ -220,6 +224,7 @@ class QRApp:
                         break
 
                 cv2.imshow("📷 Webcam quét QR CCCD", frame_display)
+
                 key = cv2.waitKey(1)
                 if key & 0xFF == ord('q'):
                     break
@@ -234,8 +239,9 @@ class QRApp:
                 self.show_status("❌ Không quét được mã QR từ webcam.", error=True)
                 self.phat_am_thanh("error.wav")
 
-        # Chạy trong luồng riêng
         threading.Thread(target=scan_qr, daemon=True).start()
+
+
 
     def chup_anh(self, loai):
         self.xoa_thong_bao()
