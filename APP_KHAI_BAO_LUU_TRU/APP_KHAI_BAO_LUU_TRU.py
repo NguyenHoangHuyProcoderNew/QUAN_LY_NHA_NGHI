@@ -124,6 +124,7 @@ class QRApp:
         self.webcam_combobox = ttk.Combobox(button_frame, textvariable=self.webcam_name_var, state="readonly", font=("Segoe UI", 10))
         self.webcam_combobox['values'] = webcams
         self.webcam_combobox.pack(fill=X, pady=5)
+        self.qreader = QReader()
 
         if webcams:
             self.webcam_combobox.current(0)  # Chọn webcam đầu tiên làm mặc định
@@ -195,13 +196,21 @@ class QRApp:
             )
 
             webcam_index = self.ten_webcams.index(self.webcam_name_var.get())
-            cap = cv2.VideoCapture(webcam_index)
 
-            # Giảm độ phân giải để mở nhanh hơn
+            # 🆕 Mở một khung hình đen tạm thời để cảm giác phản hồi ngay
+            cv2.namedWindow("📷 Webcam quét QR CCCD")
+            import numpy as np
+            black_frame = np.zeros((360, 640, 3), dtype=np.uint8)
+            cv2.imshow("📷 Webcam quét QR CCCD", black_frame)
+            cv2.waitKey(1)
+
+            # 🆕 Tăng tốc mở webcam
+            cap = cv2.VideoCapture(webcam_index, cv2.CAP_DSHOW)  # Dùng DirectShow để mở nhanh hơn trên Windows
+
+            # Thiết lập độ phân giải nhỏ ngay sau khi mở
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
 
-            qreader = QReader()
             found_data = None
             frame_count = 0
 
@@ -211,14 +220,12 @@ class QRApp:
                     break
 
                 frame_count += 1
-
-                # Resize để hiển thị mượt và đủ nhìn
                 frame_display = cv2.resize(frame, (640, 360))
 
-                # Quét mỗi 3 frame để tăng tốc độ quét (thay vì 6)
+                # Quét mỗi 3 frame
                 if frame_count % 3 == 0:
                     image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    result = qreader.detect_and_decode(image=image_rgb)
+                    result = self.qreader.detect_and_decode(image=image_rgb)
                     if result and result[0]:
                         found_data = result[0]
                         break
@@ -240,8 +247,6 @@ class QRApp:
                 self.phat_am_thanh("error.wav")
 
         threading.Thread(target=scan_qr, daemon=True).start()
-
-
 
     def chup_anh(self, loai):
         self.xoa_thong_bao()
