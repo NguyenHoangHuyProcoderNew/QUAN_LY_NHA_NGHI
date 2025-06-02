@@ -5,21 +5,14 @@ import numpy as np
 from datetime import datetime
 from unidecode import unidecode
 import json
-
 from PyQt5 import QtCore, QtGui, QtWidgets, QtMultimedia, QtMultimediaWidgets
 from PyQt5.QtMultimedia import QCameraImageCapture
-
-
-
 from qreader import QReader
 import winsound
-
 import time
-
 import win32com.client as win32
 from datetime import datetime
 import shutil
-
 
 def chuan_hoa_ngay(dmy: str) -> str:
     return f"{dmy[:2]}/{dmy[2:4]}/{dmy[4:]}" if len(dmy) == 8 else dmy
@@ -971,7 +964,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         try:
             current_dir = self.app_dir
-            excel_path = os.path.join(current_dir, "DU_LIEU_KHAI_BAO.xlsx")
+            excel_path = os.path.join(current_dir, "DS_Cong_Dan.xlsx")
             excel = win32.gencache.EnsureDispatch('Excel.Application')
             excel.Visible = False
 
@@ -1003,7 +996,7 @@ class MainWindow(QtWidgets.QMainWindow):
             def save_image_when_needed(image_temp, old_path, prefix):
                 if old_path and os.path.exists(old_path):
                     # Nếu là file có sẵn thì copy vào thư mục lưu trữ (nếu chưa ở trong đó)
-                    folder = os.path.join(current_dir, "Anh_CCCD_da_khai_bao")
+                    folder = os.path.join(current_dir, "DS_Anh_Cong_Dan_da_khai_bao")
                     os.makedirs(folder, exist_ok=True)
                     filename = os.path.basename(old_path)
                     dest_path = os.path.join(folder, filename)
@@ -1012,9 +1005,14 @@ class MainWindow(QtWidgets.QMainWindow):
                     return dest_path
                 elif image_temp is not None:
                     # Nếu là ảnh tạm (QImage) thì lưu file mới vào thư mục
-                    folder = os.path.join(current_dir, "Anh_CCCD_da_khai_bao")
+                    folder = os.path.join(current_dir, "DS_Anh_Cong_Dan_da_khai_bao")
                     os.makedirs(folder, exist_ok=True)
-                    filename = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+                    # Tạo tên file theo yêu cầu: mat_truoc_Ho_va_ten_Ngay_sinh.jpg
+                    hoten_raw = self.fields["Họ và tên"].text().strip()
+                    ngaysinh_raw = self.fields["Ngày sinh"].date().toString("dd/MM/yyyy")
+                    hoten = unidecode(hoten_raw).replace(" ", "_")
+                    ngaysinh = ngaysinh_raw.replace("/", "_")
+                    filename = f"{prefix}_{hoten}_{ngaysinh}.jpg"
                     save_path = os.path.join(folder, filename)
                     image_temp.save(save_path)
                     return save_path
@@ -1073,7 +1071,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def open_excel_file(self):
         try:
-            excel_path = os.path.join(self.app_dir, "DU_LIEU_KHAI_BAO.xlsx")
+            excel_path = os.path.join(self.app_dir, "DS_Cong_Dan.xlsx")
             if os.path.exists(excel_path):
                 os.startfile(excel_path)  # ✅ Mở bằng Excel mặc định
             else:
