@@ -9,6 +9,8 @@ import json
 from PyQt5 import QtCore, QtGui, QtWidgets, QtMultimedia, QtMultimediaWidgets
 from PyQt5.QtMultimedia import QCameraImageCapture
 
+
+
 from qreader import QReader
 import winsound
 
@@ -87,19 +89,21 @@ class QRDecodeThread(QtCore.QThread):
 class OptionDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, current_qr_idx=-1, current_cam_idx=-1):
         super().__init__(parent)
-        self.setWindowTitle("Option")
+        self.setWindowTitle("Cài đặt")
         self.setModal(True)
         self.resize(500, 300)
         self.available_cameras = QtMultimedia.QCameraInfo.availableCameras()
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(20)
-        grp = QtWidgets.QGroupBox("Cài đặt chung")
+        grp = QtWidgets.QGroupBox("Cài đặt webcam quét thông tin và chụp ảnh mặt trước/sau")
         vbox = QtWidgets.QVBoxLayout(grp)
         vbox.setContentsMargins(10, 10, 10, 10)
         vbox.setSpacing(15)
+
+        # --- Chọn webcam đọc QR ---
         h1 = QtWidgets.QHBoxLayout()
-        lbl1 = QtWidgets.QLabel("Webcam đọc QR")
+        lbl1 = QtWidgets.QLabel("Webcam đọc QR:")
         lbl1.setFixedWidth(120)
         lbl1.setStyleSheet("color: black;")
         self.cmb_qr = QtWidgets.QComboBox()
@@ -124,8 +128,10 @@ class OptionDialog(QtWidgets.QDialog):
         h1.addWidget(lbl1)
         h1.addWidget(self.cmb_qr)
         vbox.addLayout(h1)
+
+        # --- Chọn webcam chụp ảnh ---
         h2 = QtWidgets.QHBoxLayout()
-        lbl2 = QtWidgets.QLabel("Webcam chụp ảnh")
+        lbl2 = QtWidgets.QLabel("Webcam chụp ảnh:")
         lbl2.setFixedWidth(120)
         lbl2.setStyleSheet("color: black;")
         self.cmb_cam = QtWidgets.QComboBox()
@@ -150,40 +156,46 @@ class OptionDialog(QtWidgets.QDialog):
         h2.addWidget(lbl2)
         h2.addWidget(self.cmb_cam)
         vbox.addLayout(h2)
+
         if 0 <= current_qr_idx < len(self.available_cameras):
             self.cmb_qr.setCurrentIndex(current_qr_idx)
         if 0 <= current_cam_idx < len(self.available_cameras):
             self.cmb_cam.setCurrentIndex(current_cam_idx)
+
         layout.addWidget(grp)
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch()
-        btn_save = QtWidgets.QPushButton("Save")
+        btn_save = QtWidgets.QPushButton("Lưu")
         btn_save.setFixedSize(100, 35)
         btn_save.setStyleSheet("""
             QPushButton {
-                background-color: #33CCFF;
+                background-color: #005BEA;  /* Xanh dương đậm */
                 color: white;
+                font-size: 18px;                   
                 font-weight: bold;
-                border-radius: 5px;
+                border-radius: 10px;
             }
             QPushButton:hover {
-                background-color: #66DDFF;
+                background-color: #3366FF;  /* Màu sáng hơn khi hover */
             }
         """)
+
         btn_save.clicked.connect(self.accept)
-        btn_cancel = QtWidgets.QPushButton("Cancel")
+        btn_cancel = QtWidgets.QPushButton("Trở lại")
         btn_cancel.setFixedSize(100, 35)
         btn_cancel.setStyleSheet("""
             QPushButton {
-                background-color: #FF6666;
+                background-color: #FF2222;  /* Đỏ sáng rõ */
                 color: white;
+                font-size: 18px;
                 font-weight: bold;
-                border-radius: 5px;
+                border-radius: 10px;
             }
             QPushButton:hover {
-                background-color: #FF7F7F;
+                background-color: #FF5555;  /* Đậm hơn một chút khi hover */
             }
         """)
+
         btn_cancel.clicked.connect(self.reject)
         btn_row.addWidget(btn_save)
         btn_row.addWidget(btn_cancel)
@@ -191,13 +203,75 @@ class OptionDialog(QtWidgets.QDialog):
 
     def get_selected_camera_indexes(self):
         return self.cmb_qr.currentIndex(), self.cmb_cam.currentIndex()
+    
+class FloatingCalendarDateEdit(QtWidgets.QDateEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCalendarPopup(True)
+        calendar = QtWidgets.QCalendarWidget()
+        calendar.setVerticalHeaderFormat(QtWidgets.QCalendarWidget.NoVerticalHeader)
+        calendar.setFixedSize(360, 260)  # Kích thước lịch popup
+        self.setCalendarWidget(calendar)
+        self.setDisplayFormat("dd/MM/yyyy")
+
+
+    # def mousePressEvent(self, event):
+    #     super().mousePressEvent(event)
+    #     if not self._calendar_shown:
+    #         self._show_calendar()
+
+
+    # def _show_calendar(self):
+    #     if self._calendar_shown:
+    #         return
+    #     self._calendar_shown = True
+    #     self.calendar_widget.setSelectedDate(self.date())
+    #     pos = self.mapToGlobal(QtCore.QPoint(0, self.height()))
+    #     self.calendar_widget.move(pos)
+    #     self.calendar_widget.show()
+    #     self.calendar_widget.setFocus()
+    #     self.calendar_widget.installEventFilter(self)
+
+    # def _on_calendar_date_selected(self, date):
+    #     self.setDate(date)
+    #     self.calendar_widget.hide()
+    #     self._calendar_shown = False
+
+    # def eventFilter(self, obj, event):
+    #     if obj == self.calendar_widget and event.type() == QtCore.QEvent.FocusOut:
+    #         self.calendar_widget.hide()
+    #         self._calendar_shown = False
+    #     return super().eventFilter(obj, event)
+    
+    # def focusInEvent(self, event):
+    #     super().focusInEvent(event)
+    #     self._show_calendar()
+
+    # def keyPressEvent(self, event):
+    #     # Cho phép nhập tay
+    #     super().keyPressEvent(event)
+    #     self._show_calendar()
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Kiểm soát ra/vào bằng CCCD 0.3.3")
-        self.resize(1280, 1000)
+        self.setWindowTitle("Phần mềm khai báo thông tin lưu trú được lập trình bởi Nguyễn Hoàng Huy - My phone: 033.293.6390")
+
+        # Xác định đường dẫn thư mục app
+        if getattr(sys, 'frozen', False):
+            self.app_dir = sys._MEIPASS
+        else:
+            self.app_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # ✅ Gán icon cửa sổ
+        icon_path = os.path.join(self.app_dir, "logo_app.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QtGui.QIcon(icon_path))
+    
+        # Thay vì resize cứng, chỉ đặt minimumSize để cho phép người dùng kéo to nhỏ
         self.setMinimumSize(1200, 850)
+        self.resize(1200, 800)
+        self.setFixedSize(self.width(), self.height()) # Khóa không cho thay đổi kích thước cửa sổ giao diện
         self.cap_qr = None
         self.timer_cv = None
         self.last_qr_text = ""
@@ -209,6 +283,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.front_img_label = None
         self.back_img_path = None
         self.back_img_label = None
+
         # Đọc config webcam, nếu có
         self.qr_cam_index, self.index_camera_cam = load_camera_config()
         if getattr(sys, 'frozen', False):
@@ -216,7 +291,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.app_dir = os.path.dirname(os.path.abspath(__file__))
 
-        self.can_decode = True    # <--- Cờ kiểm soát cho phép quét tiếp sau 3 giây
+        self.can_decode = True    # Cờ kiểm soát cho phép quét tiếp sau 3 giây
 
         self._createMenus()
         self._createCentralWidget()
@@ -225,32 +300,43 @@ class MainWindow(QtWidgets.QMainWindow):
         self.front_image_temp = None  # Lưu QImage mặt trước tạm
         self.back_image_temp = None   # Lưu QImage mặt sau tạm
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.viewfinder_cam and self.lbl_qr_preview:
+            self.viewfinder_cam.setFixedSize(self.lbl_qr_preview.size())
+
     def _createMenus(self):
         menubar = self.menuBar()
         menubar.setNativeMenuBar(False)
-        self.menu_ds_congdan = menubar.addMenu("DS Công dân")
-        self.menu_ds_luotvao = menubar.addMenu("DS Lượt vào")
-        self.menu_phan_nhom = menubar.addMenu("Phân nhóm")
-        self.menu_caidat = menubar.addMenu("Cài đặt")
-        self.menu_gioithieu = menubar.addMenu("Giới thiệu")
-        self.menu_test = menubar.addMenu("Test")
-        option_action = QtWidgets.QAction("Option…", self)
-        option_action.triggered.connect(self.on_open_settings)
-        self.menu_caidat.addAction(option_action)
+        # Cài đặt
+        self.action_caidat = QtWidgets.QAction("Cài đặt", self)
+        self.action_caidat.triggered.connect(self.on_open_settings)
+        menubar.addAction(self.action_caidat)
+
+        # DS Công Dân
+        self.action_open_excel = QtWidgets.QAction("DS Công dân", self)
+        self.action_open_excel.triggered.connect(self.open_excel_file)
+        menubar.addAction(self.action_open_excel)
 
     def _createCentralWidget(self):
         central = QtWidgets.QWidget()
         central.setStyleSheet("background-color: #E6F5FF;")
         self.setCentralWidget(central)
+
         main_layout = QtWidgets.QHBoxLayout(central)
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
+
+        # ------------------- Cột bên trái -------------------
         left_widget = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(10)
+
+        # Frame hiển thị preview QR
         self.frame_qr = QtWidgets.QFrame()
-        self.frame_qr.setFixedSize(320, 200)
+        self.frame_qr.setMinimumSize(320, 180)
+        self.frame_qr.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self.frame_qr.setStyleSheet("""
             QFrame {
                 background-color: #F0F7FF;
@@ -259,26 +345,43 @@ class MainWindow(QtWidgets.QMainWindow):
             }
         """)
         self.lbl_qr_preview = QtWidgets.QLabel(self.frame_qr)
-        self.lbl_qr_preview.setFixedSize(320, 200)
+        self.lbl_qr_preview.setMinimumSize(360, 180)
         self.lbl_qr_preview.setStyleSheet("background-color: #000000;")
         self.lbl_qr_preview.setAlignment(QtCore.Qt.AlignCenter)
+
         self.btn_select_file = QtWidgets.QToolButton()
         folder_icon = self.style().standardIcon(QtWidgets.QStyle.SP_DirOpenIcon)
         self.btn_select_file.setIcon(folder_icon)
         self.btn_select_file.setToolTip("Chọn ảnh CCCD từ máy tính")
         self.btn_select_file.setFixedSize(28, 28)
         self.btn_select_file.clicked.connect(self.select_cccd_image)
+
         h_qr_row = QtWidgets.QHBoxLayout()
-        h_qr_row.addWidget(self.frame_qr)
-        h_qr_row.addWidget(self.btn_select_file, alignment=QtCore.Qt.AlignBottom)
+        h_qr_row.addWidget(self.frame_qr, stretch=1)
+
+        # Tạo layout phụ để canh nút xuống 1px
+        btn_layout = QtWidgets.QVBoxLayout()
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(0)
+        btn_layout.addSpacing(300)  # Dịch xuống 1px
+        btn_layout.addWidget(self.btn_select_file, alignment=QtCore.Qt.AlignTop)
+
+        h_qr_row.addLayout(btn_layout)
+
+        # ✅ THÊM DÒNG NÀY ĐỂ HIỂN THỊ
         left_layout.addLayout(h_qr_row)
+
+
         lbl_qr_text = QtWidgets.QLabel("Webcam đọc QR")
         lbl_qr_text.setAlignment(QtCore.Qt.AlignCenter)
         lbl_qr_text.setStyleSheet("color: black; font-weight: bold; font-size: 16px;")
         left_layout.addWidget(lbl_qr_text)
-        left_layout.addSpacing(20)
+
+        # Frame hiển thị viewfinder cho chụp ảnh
         self.frame_cam = QtWidgets.QFrame()
-        self.frame_cam.setFixedSize(319, 180)
+        self.frame_cam.setMinimumSize(320, 180)  # đặt kích thước tối thiểu hợp lý
+        self.frame_cam.setMaximumWidth(348)
+        self.frame_cam.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self.frame_cam.setStyleSheet("""
             QFrame {
                 background-color: #F0F7FF;
@@ -286,33 +389,44 @@ class MainWindow(QtWidgets.QMainWindow):
                 border-radius: 4px;
             }
         """)
-        self.viewfinder_cam = QtMultimediaWidgets.QCameraViewfinder(self.frame_cam)
-        layout = QtWidgets.QVBoxLayout(self.frame_cam)
-        layout.setContentsMargins(0,0,0,0)
-        layout.setSpacing(0)
-        layout.addWidget(self.viewfinder_cam)
+        self.viewfinder_cam = QtMultimediaWidgets.QVideoWidget(self.frame_cam)
+        self.viewfinder_cam.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        
+
+        vf_layout = QtWidgets.QVBoxLayout(self.frame_cam)
+        vf_layout.setContentsMargins(0, 0, 0, 0)
+        vf_layout.setSpacing(0)
+        vf_layout.addWidget(self.viewfinder_cam)
+
+
         lbl_cam_text = QtWidgets.QLabel("Webcam chụp mặt trước/sau")
         lbl_cam_text.setAlignment(QtCore.Qt.AlignCenter)
         lbl_cam_text.setStyleSheet("color: black; font-weight: bold; font-size: 16px;")
-        left_layout.addWidget(self.frame_cam, alignment=QtCore.Qt.AlignLeft)
+        left_layout.addWidget(self.frame_cam)
         left_layout.addWidget(lbl_cam_text)
         left_layout.addSpacing(20)
+
+        # Các widget chọn ảnh mặt trước, mặt sau
         self.img_front_widget = self._create_image_widget("Ảnh mặt trước", is_front=True)
         self.img_back_widget = self._create_image_widget("Ảnh mặt sau", is_back=True)
         left_layout.addWidget(self.img_front_widget)
         left_layout.addWidget(self.img_back_widget)
+
         left_layout.addStretch()
         main_layout.addWidget(left_widget, stretch=2)
 
-        # ==== FORM VỚI STYLE ĐẸP ====
+        # ------------------- Cột giữa: FORM -------------------
+        # Đưa form_container vào scroll area
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
         form_container = QtWidgets.QWidget()
         form_layout_v = QtWidgets.QVBoxLayout(form_container)
-        form_layout_v.setContentsMargins(0, 0, 0, 0)
+        form_layout_v.setContentsMargins(10, 10, 10, 10)
         form_layout_v.setSpacing(10)
 
         self.fields = {}
 
-        label_style = "color: black; font-size: 16px; font-weight: 500;"
+        label_style = "color: black; font-size: 16px; font-family: 'Segoe UI', 'Arial', sans-serif; font-weight: 500;"
         input_style = """
             background-color: #FFFFFF;
             color: #222222;
@@ -360,11 +474,15 @@ class MainWindow(QtWidgets.QMainWindow):
         # Ngày sinh
         lbl_ns = QtWidgets.QLabel("Ngày sinh:")
         lbl_ns.setStyleSheet(label_style)
-        self.date_ns = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
+        self.date_ns = FloatingCalendarDateEdit()
+        self.date_ns.setDate(QtCore.QDate.currentDate())
         self.date_ns.setDisplayFormat("dd/MM/yyyy")
-        self.date_ns.setCalendarPopup(True)
         self.date_ns.setFixedHeight(32)
         self.date_ns.setStyleSheet(input_style)
+
+        calendar_widget = QtWidgets.QCalendarWidget()
+        calendar_widget.setFixedSize(400, 260)  # ✅ ép cố định kích thước popup
+        calendar_widget.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)  # ✅ tránh co giãn
         form.addRow(lbl_ns, self.date_ns)
         self.fields["Ngày sinh"] = self.date_ns
 
@@ -398,9 +516,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Ngày cấp giấy tờ
         lbl_ncgt = QtWidgets.QLabel("Ngày cấp giấy tờ:")
         lbl_ncgt.setStyleSheet(label_style)
-        self.date_cap = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
+        self.date_cap = FloatingCalendarDateEdit()
+        self.date_cap.setDate(QtCore.QDate.currentDate())
         self.date_cap.setDisplayFormat("dd/MM/yyyy")
-        self.date_cap.setCalendarPopup(True)
         self.date_cap.setFixedHeight(32)
         self.date_cap.setStyleSheet(input_style)
         form.addRow(lbl_ncgt, self.date_cap)
@@ -439,56 +557,56 @@ class MainWindow(QtWidgets.QMainWindow):
         form_layout_v.addLayout(form)
         form_layout_v.addStretch()
 
-        # === THÊM 2 NÚT "SAVE" và "CLEAR" ===
+        # Nút Lưu và Xóa thông tin
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch()
-        btn_save = QtWidgets.QPushButton("Save")
+        btn_save = QtWidgets.QPushButton("Lưu")
         btn_save.setFixedHeight(40)
         btn_save.setFixedWidth(120)
         btn_save.setStyleSheet("""
             QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00C6FB, stop:1 #005BEA);
+                background-color: #005BEA;
                 color: white;
                 font-size: 18px;
                 font-weight: bold;
                 border-radius: 15px;
             }
             QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00E1FF, stop:1 #005BEA);
+                background-color: #0047BA;
             }
         """)
         btn_save.clicked.connect(self.write_to_excel)
 
-        btn_clear = QtWidgets.QPushButton("Clear")
+        btn_clear = QtWidgets.QPushButton("Xóa")
         btn_clear.setFixedHeight(40)
         btn_clear.setFixedWidth(120)
         btn_clear.setStyleSheet("""
             QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #FFDEE9, stop:1 #FF5050);
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #FF7A7A, stop:1 #FF1C1C);  /* Sáng phía trên, đậm phía dưới */
                 color: white;
                 font-size: 18px;
                 font-weight: bold;
                 border-radius: 15px;
             }
             QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #FFB3B3, stop:1 #FF1744);
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #FF9999, stop:1 #E60000);
             }
         """)
         btn_clear.clicked.connect(self.clear_all_fields)
-
         btn_row.addWidget(btn_save)
         btn_row.addWidget(btn_clear)
         btn_row.addStretch()
-
         form_layout_v.addLayout(btn_row)
-        # === END NÚT ===
+        scroll.setWidget(form_container)
+        main_layout.addWidget(scroll, stretch=3)
 
-        main_layout.addWidget(form_container, stretch=3)
-
+        # ------------------- Cột bên phải (chỉ là background blue) -------------------
         right_panel = QtWidgets.QWidget()
+        right_panel.setMinimumWidth(100)
         right_panel.setStyleSheet("background-color: #3399FF;")
-        main_layout.addWidget(right_panel, stretch=2)
-
+        main_layout.addWidget(right_panel, stretch=1)
 
     def _create_image_widget(self, label_text: str, is_front=False, is_back=False) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
@@ -523,7 +641,9 @@ class MainWindow(QtWidgets.QMainWindow):
         top_row.addWidget(btn_camera)
         v_main.addLayout(top_row)
         lbl_image = QtWidgets.QLabel()
-        lbl_image.setFixedSize(350, 200)
+        lbl_image.setFixedSize(250, 160)  # bạn có thể điều chỉnh 250 và 160 tùy mong muốn
+        lbl_image.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        lbl_image.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         lbl_image.setStyleSheet("""
             QLabel {
                 background-color: #FFFFFF;
@@ -533,6 +653,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """)
         v_main.addWidget(lbl_image, alignment=QtCore.Qt.AlignLeft)
         v_main.addSpacing(5)
+
         if is_front:
             self.front_img_path = edt_path
             self.front_img_label = lbl_image
@@ -600,7 +721,7 @@ class MainWindow(QtWidgets.QMainWindow):
         pixmap = QtGui.QPixmap.fromImage(image).scaled(
             self.front_img_label.width(),
             self.front_img_label.height(),
-            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.IgnoreAspectRatio,
             QtCore.Qt.SmoothTransformation
         )
         self.front_img_label.setPixmap(pixmap)
@@ -626,7 +747,7 @@ class MainWindow(QtWidgets.QMainWindow):
         pixmap = QtGui.QPixmap.fromImage(image).scaled(
             self.back_img_label.width(),
             self.back_img_label.height(),
-            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.IgnoreAspectRatio,
             QtCore.Qt.SmoothTransformation
         )
         self.back_img_label.setPixmap(pixmap)
@@ -652,6 +773,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.setup_cameras()
 
     def setup_cameras(self):
+        # Nếu đã khởi tạo trước đó, dừng và giải phóng
         if hasattr(self, "cap_qr") and self.cap_qr is not None:
             self.timer_cv.stop()
             self.cap_qr.release()
@@ -684,9 +806,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.qr_thread = None
 
         cameras_info = QtMultimedia.QCameraInfo.availableCameras()
+        # Thiết lập webcam đọc QR
         if hasattr(self, "qr_cam_index") and 0 <= self.qr_cam_index < len(cameras_info):
             self.cap_qr = cv2.VideoCapture(self.qr_cam_index, cv2.CAP_DSHOW)
-            self.cap_qr.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            self.cap_qr.set(cv2.CAP_PROP_FRAME_WIDTH, 600)
             self.cap_qr.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
             self.frame_count = 0
             self.timer_cv = QtCore.QTimer(self)
@@ -696,11 +819,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.qr_thread.qrDecoded.connect(self.on_qr_decoded)
             self.qr_thread.start()
 
+        # Thiết lập webcam chụp ảnh (mặt trước/sau)
         if 0 <= self.index_camera_cam < len(cameras_info):
             cam_info_cam = cameras_info[self.index_camera_cam]
             self.camera_cam = QtMultimedia.QCamera(cam_info_cam)
             self.camera_cam.setViewfinder(self.viewfinder_cam)
+            self.viewfinder_cam.setAspectRatioMode(QtCore.Qt.KeepAspectRatioByExpanding)
             self.viewfinder_cam.show()
+            self.viewfinder_cam.updateGeometry()
             self.frame_cam.setStyleSheet("""
                 QFrame {
                     border: 1px solid #CCCCCC;
@@ -725,6 +851,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtCore.Qt.IgnoreAspectRatio,
             QtCore.Qt.SmoothTransformation
         )
+
         self.lbl_qr_preview.setPixmap(pixmap)
         if self.qr_thread is not None and not self.qr_thread.isRunning():
             return
@@ -759,6 +886,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.can_process_trung = True
 
     def fill_form_from_info(self, info: dict):
+        self.clear_status()
         self.fields["Số giấy tờ"].setText(info["Số giấy tờ"])
         self.fields["Số CMND cũ (nếu có)"].setText(info["Số CMND cũ (nếu có)"])
         self.fields["Họ và tên"].setText(info["Họ và tên"])
@@ -784,7 +912,7 @@ class MainWindow(QtWidgets.QMainWindow):
         except:
             self.date_cap.clear()
         self.fields["Loại giấy tờ"].setText("CCCD")
-        self.status_label.setText("✅ Quét QR từ webcam thành công, đã điền thông tin.")
+        self.status_label.setText("✅ Quét QR thành công, đã điền thông tin.")
         self.status_label.setStyleSheet("color: green;")
 
     def select_cccd_image(self):
@@ -937,10 +1065,21 @@ class MainWindow(QtWidgets.QMainWindow):
             self.front_image_temp = None
             self.back_image_temp = None
 
-            QtWidgets.QMessageBox.information(self, "Lưu Excel", f"Lưu thông tin thành công.\nDòng thứ {row} trong file DU_LIEU_KHAI_BAO.xlsx")
+            self.clear_all_fields()
+            self.show_success_message(f"✅ Đã lưu thông tin của công dân thứ {row} thành công vào DS Công Dân")
+
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Lỗi Excel", f"Lỗi khi ghi Excel: {e}")
 
+    def open_excel_file(self):
+        try:
+            excel_path = os.path.join(self.app_dir, "DU_LIEU_KHAI_BAO.xlsx")
+            if os.path.exists(excel_path):
+                os.startfile(excel_path)  # ✅ Mở bằng Excel mặc định
+            else:
+                QtWidgets.QMessageBox.warning(self, "Không tìm thấy file", "Chưa có dữ liệu khai báo hoặc file chưa được tạo.")
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Lỗi", f"Không thể mở file Excel: {e}")
 
     def clear_all_fields(self):
         for field in self.fields.values():
@@ -960,7 +1099,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.front_img_path.setText("")
         if self.back_img_path:
             self.back_img_path.setText("")
+        self.clear_status()
 
+    def show_success_message(self, message: str):
+        self.status_label.setText(message)
+        self.status_label.setStyleSheet("color: blue; font-size: 14px; font-weight: bold;")
 
 
 if __name__ == "__main__":
