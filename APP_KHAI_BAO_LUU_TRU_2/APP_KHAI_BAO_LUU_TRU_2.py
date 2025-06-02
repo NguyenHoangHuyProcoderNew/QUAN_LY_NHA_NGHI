@@ -1,5 +1,11 @@
 import sys
 import os
+if not sys.stdout:
+    sys.stdout = open(os.devnull, 'w')
+if not sys.stderr:
+    sys.stderr = open(os.devnull, 'w')
+
+import os
 import cv2
 import numpy as np
 from datetime import datetime
@@ -207,7 +213,6 @@ class FloatingCalendarDateEdit(QtWidgets.QDateEdit):
         self.setCalendarWidget(calendar)
         self.setDisplayFormat("dd/MM/yyyy")
 
-
     # def mousePressEvent(self, event):
     #     super().mousePressEvent(event)
     #     if not self._calendar_shown:
@@ -285,11 +290,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.app_dir = os.path.dirname(os.path.abspath(__file__))
 
         self.can_decode = True    # Cờ kiểm soát cho phép quét tiếp sau 3 giây
-
         self._createMenus()
         self._createCentralWidget()
         self.setup_cameras()
-
         self.front_image_temp = None  # Lưu QImage mặt trước tạm
         self.back_image_temp = None   # Lưu QImage mặt sau tạm
 
@@ -315,7 +318,6 @@ class MainWindow(QtWidgets.QMainWindow):
         central = QtWidgets.QWidget()
         central.setStyleSheet("background-color: #E6F5FF;")
         self.setCentralWidget(central)
-
         main_layout = QtWidgets.QHBoxLayout(central)
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
@@ -341,7 +343,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lbl_qr_preview.setMinimumSize(360, 180)
         self.lbl_qr_preview.setStyleSheet("background-color: #000000;")
         self.lbl_qr_preview.setAlignment(QtCore.Qt.AlignCenter)
-
         self.btn_select_file = QtWidgets.QToolButton()
         folder_icon = self.style().standardIcon(QtWidgets.QStyle.SP_DirOpenIcon)
         self.btn_select_file.setIcon(folder_icon)
@@ -358,12 +359,10 @@ class MainWindow(QtWidgets.QMainWindow):
         btn_layout.setSpacing(0)
         btn_layout.addSpacing(300)  # Dịch xuống 1px
         btn_layout.addWidget(self.btn_select_file, alignment=QtCore.Qt.AlignTop)
-
         h_qr_row.addLayout(btn_layout)
 
         # ✅ THÊM DÒNG NÀY ĐỂ HIỂN THỊ
         left_layout.addLayout(h_qr_row)
-
 
         lbl_qr_text = QtWidgets.QLabel("Webcam đọc QR")
         lbl_qr_text.setAlignment(QtCore.Qt.AlignCenter)
@@ -382,16 +381,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 border-radius: 4px;
             }
         """)
+
         self.viewfinder_cam = QtMultimediaWidgets.QVideoWidget(self.frame_cam)
         self.viewfinder_cam.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        
-
         vf_layout = QtWidgets.QVBoxLayout(self.frame_cam)
         vf_layout.setContentsMargins(0, 0, 0, 0)
         vf_layout.setSpacing(0)
         vf_layout.addWidget(self.viewfinder_cam)
-
-
         lbl_cam_text = QtWidgets.QLabel("Webcam chụp mặt trước/sau")
         lbl_cam_text.setAlignment(QtCore.Qt.AlignCenter)
         lbl_cam_text.setStyleSheet("color: black; font-weight: bold; font-size: 16px;")
@@ -404,7 +400,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.img_back_widget = self._create_image_widget("Ảnh mặt sau", is_back=True)
         left_layout.addWidget(self.img_front_widget)
         left_layout.addWidget(self.img_back_widget)
-
         left_layout.addStretch()
         main_layout.addWidget(left_widget, stretch=2)
 
@@ -1102,7 +1097,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def show_success_message(self, message: str):
         self.status_label.setText(message)
         self.status_label.setStyleSheet("color: blue; font-size: 14px; font-weight: bold;")
-
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
