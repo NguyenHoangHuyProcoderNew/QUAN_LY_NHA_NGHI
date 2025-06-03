@@ -5,19 +5,24 @@ import sys
 if hasattr(sys, 'frozen'):
     os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = os.path.join(sys._MEIPASS, 'platforms')
     os.environ['QT_ENABLE_HIGHDPI_SCALING'] = '1'
+    # Tắt logging của OpenCV
+    os.environ["OPENCV_LOG_LEVEL"] = "OFF"
+    # Tắt console output
     if not sys.stdout:
         sys.stdout = open(os.devnull, 'w')
     if not sys.stderr:
         sys.stderr = open(os.devnull, 'w')
 
 # Import các thư viện cần thiết
-import cv2
-import numpy as np
-from datetime import datetime
-from unidecode import unidecode
-import json
 from PyQt5 import QtCore, QtGui, QtWidgets, QtMultimedia, QtMultimediaWidgets
 from PyQt5.QtMultimedia import QCameraImageCapture
+import cv2
+cv2.setLogLevel(0)  # Tắt logging của OpenCV
+
+# Import các module khác theo thứ tự cần thiết
+from datetime import datetime, timezone, timedelta
+from unidecode import unidecode
+import json
 from qreader import QReader
 import winsound
 import time
@@ -240,43 +245,7 @@ class FloatingCalendarDateEdit(QtWidgets.QDateEdit):
         calendar.setFixedSize(360, 260)  # Kích thước lịch popup
         self.setCalendarWidget(calendar)
         self.setDisplayFormat("dd/MM/yyyy")
-
-    # def mousePressEvent(self, event):
-    #     super().mousePressEvent(event)
-    #     if not self._calendar_shown:
-    #         self._show_calendar()
-
-
-    # def _show_calendar(self):
-    #     if self._calendar_shown:
-    #         return
-    #     self._calendar_shown = True
-    #     self.calendar_widget.setSelectedDate(self.date())
-    #     pos = self.mapToGlobal(QtCore.QPoint(0, self.height()))
-    #     self.calendar_widget.move(pos)
-    #     self.calendar_widget.show()
-    #     self.calendar_widget.setFocus()
-    #     self.calendar_widget.installEventFilter(self)
-
-    # def _on_calendar_date_selected(self, date):
-    #     self.setDate(date)
-    #     self.calendar_widget.hide()
-    #     self._calendar_shown = False
-
-    # def eventFilter(self, obj, event):
-    #     if obj == self.calendar_widget and event.type() == QtCore.QEvent.FocusOut:
-    #         self.calendar_widget.hide()
-    #         self._calendar_shown = False
-    #     return super().eventFilter(obj, event)
-    
-    # def focusInEvent(self, event):
-    #     super().focusInEvent(event)
-    #     self._show_calendar()
-
-    # def keyPressEvent(self, event):
-    #     # Cho phép nhập tay
-    #     super().keyPressEvent(event)
-    #     self._show_calendar()
+        self.setDate(QtCore.QDate.currentDate())  # Đặt ngày hiện tại
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -602,13 +571,8 @@ class MainWindow(QtWidgets.QMainWindow):
         lbl_ns.setStyleSheet(label_style)
         self.date_ns = FloatingCalendarDateEdit()
         self.date_ns.setDate(QtCore.QDate.currentDate())
-        self.date_ns.setDisplayFormat("dd/MM/yyyy")
         self.date_ns.setFixedHeight(32)
         self.date_ns.setStyleSheet(input_style)
-
-        calendar_widget = QtWidgets.QCalendarWidget()
-        calendar_widget.setFixedSize(400, 260)  # ✅ ép cố định kích thước popup
-        calendar_widget.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)  # ✅ tránh co giãn
         form.addRow(lbl_ns, self.date_ns)
         self.fields["Ngày sinh"] = self.date_ns
 
@@ -644,7 +608,6 @@ class MainWindow(QtWidgets.QMainWindow):
         lbl_ncgt.setStyleSheet(label_style)
         self.date_cap = FloatingCalendarDateEdit()
         self.date_cap.setDate(QtCore.QDate.currentDate())
-        self.date_cap.setDisplayFormat("dd/MM/yyyy")
         self.date_cap.setFixedHeight(32)
         self.date_cap.setStyleSheet(input_style)
         form.addRow(lbl_ncgt, self.date_cap)
@@ -893,7 +856,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 
                 # Lấy họ tên và ngày sinh
                 ho_ten = self.fields["Họ và tên"].text().strip()
-                ngay_sinh = self.fields["Ngày sinh"].date().toString("dd_MM_yyyy")
+                ngay_sinh = self.fields["Ngày sinh"].date()
                 
                 # Chuẩn hóa họ tên: thay khoảng trắng bằng dấu gạch dưới và loại bỏ dấu
                 ho_ten = unidecode(ho_ten).replace(" ", "_")
@@ -901,7 +864,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 # Tạo tên file
                 side = "mat_truoc" if is_front else "mat_sau"
                 if ho_ten and ngay_sinh:
-                    filename = f"{side}_{ho_ten}_{ngay_sinh}.jpg"
+                    filename = f"{side}_{ho_ten}_{ngay_sinh.day():02d}_{ngay_sinh.month():02d}_{ngay_sinh.year()}.jpg"
                 else:
                     # Nếu không có họ tên hoặc ngày sinh thì dùng timestamp
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1207,6 +1170,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 rng.Font.Bold = True
                 rng.Interior.Color = 0x00C0FF
                 rng.HorizontalAlignment = -4108
+
+                # Định dạng tất cả các cột ngày tháng là text
+                ws.Range("E:E").NumberFormat = "@"  # Ngày sinh
+                ws.Range("G:G").NumberFormat = "@"  # Ngày cấp
+                ws.Range("J:J").NumberFormat = "@"  # Thời gian ghi
+
+                # Tự động điều chỉnh độ rộng cột
+                ws.Range("A:L").EntireColumn.AutoFit()
+
                 wb.SaveAs(excel_path)
                 wb.Close()
 
@@ -1232,19 +1204,27 @@ class MainWindow(QtWidgets.QMainWindow):
                 last_row = 2
 
             # Lấy dữ liệu từ các trường, nếu trống thì để chuỗi rỗng
+            # Lấy thời gian hiện tại từ hệ thống
+            t = time.localtime()
+            current_time = f"{t.tm_mday:02d}/{t.tm_mon:02d}/{t.tm_year} {t.tm_hour:02d}:{t.tm_min:02d}"
+            
+            # Lấy ngày sinh và ngày cấp như người dùng nhập
+            ngay_sinh = self.fields["Ngày sinh"].date()
+            ngay_cap = self.fields["Ngày cấp giấy tờ"].date()
+            
             data = [
                 self.fields["Số giấy tờ"].text().strip(),
                 self.fields["Số CMND cũ (nếu có)"].text().strip(),
                 self.fields["Họ và tên"].text().strip(),
                 "Nam" if self.rb_nam.isChecked() else ("Nữ" if self.rb_nu.isChecked() else ""),
-                self.fields["Ngày sinh"].date().toString("dd/MM/yyyy") if self.fields["Ngày sinh"].date() else "",
+                f"{ngay_sinh.day():02d}/{ngay_sinh.month():02d}/{ngay_sinh.year()}" if ngay_sinh else "",
                 self.fields["Nơi thường trú"].text().strip(),
-                self.fields["Ngày cấp giấy tờ"].date().toString("dd/MM/yyyy") if self.fields["Ngày cấp giấy tờ"].date() else "",
+                f"{ngay_cap.day():02d}/{ngay_cap.month():02d}/{ngay_cap.year()}" if ngay_cap else "",
                 self.fields["Loại giấy tờ"].text().strip(),
                 self.cmb_phong.currentText().strip(),
-                datetime.now().strftime("%H:%M:%S %d/%m/%Y"),
-                front_path,  # Đường dẫn ảnh mặt trước
-                back_path   # Đường dẫn ảnh mặt sau
+                current_time,  # Thời gian ghi đã được định dạng sẵn
+                "Ảnh mặt trước" if front_path else "",  # Chỉ hiển thị text, hyperlink sẽ được thêm sau
+                "Ảnh mặt sau" if back_path else ""      # Chỉ hiển thị text, hyperlink sẽ được thêm sau
             ]
 
             # Ghi dữ liệu một lần
@@ -1256,11 +1236,33 @@ class MainWindow(QtWidgets.QMainWindow):
             rng.Font.Name = "Times New Roman"
             rng.HorizontalAlignment = -4108
 
+            # Định dạng cột thời gian ghi (cột J) là text để giữ nguyên định dạng
+            ws.Range(f"J{last_row}").NumberFormat = "@"
+            
+            # Định dạng cột ngày sinh và ngày cấp là text
+            ws.Range(f"E{last_row}").NumberFormat = "@"
+            ws.Range(f"G{last_row}").NumberFormat = "@"
+
             # Thêm hyperlink cho ảnh nếu có
             if front_path and os.path.exists(front_path):
-                ws.Cells(last_row, 11).Formula = f'=HYPERLINK("{front_path}", "Ảnh mặt trước")'
+                # Chuyển đổi đường dẫn thành đường dẫn tuyệt đối và chuẩn hóa
+                abs_front_path = os.path.abspath(front_path)
+                file_url = f"file:///{abs_front_path.replace(os.sep, '/')}"
+                ws.Hyperlinks.Add(
+                    Anchor=ws.Range(f"K{last_row}"),
+                    Address=file_url,
+                    TextToDisplay="Ảnh mặt trước"
+                )
+
             if back_path and os.path.exists(back_path):
-                ws.Cells(last_row, 12).Formula = f'=HYPERLINK("{back_path}", "Ảnh mặt sau")'
+                # Chuyển đổi đường dẫn thành đường dẫn tuyệt đối và chuẩn hóa
+                abs_back_path = os.path.abspath(back_path)
+                file_url = f"file:///{abs_back_path.replace(os.sep, '/')}"
+                ws.Hyperlinks.Add(
+                    Anchor=ws.Range(f"L{last_row}"),
+                    Address=file_url,
+                    TextToDisplay="Ảnh mặt sau"
+                )
 
             # AutoFit và border
             ws.Range("A:L").EntireColumn.AutoFit()
