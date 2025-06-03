@@ -292,10 +292,6 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.app_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # Khởi tạo đường dẫn Excel và folder ảnh
-        self.excel_path = os.path.join(self.app_dir, "DS_Cong_Dan.xlsx")
-        self.image_folder = os.path.join(self.app_dir, "DS_Anh_Cong_Dan_da_khai_bao")
-
         # ✅ Gán icon cửa sổ
         icon_path = os.path.join(self.app_dir, "logo_app.ico")
         if os.path.exists(icon_path):
@@ -328,9 +324,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._createMenus()
         self._createCentralWidget()
         
-        # Cập nhật hiển thị đường dẫn sau khi tạo UI
-        self.update_paths_display()
-
         # Khởi động webcam sau khi giao diện đã được tạo
         QtCore.QTimer.singleShot(100, self.setup_cameras)
 
@@ -449,106 +442,6 @@ class MainWindow(QtWidgets.QMainWindow):
         form_layout_v = QtWidgets.QVBoxLayout(form_container)
         form_layout_v.setContentsMargins(10, 10, 10, 10)
         form_layout_v.setSpacing(10)
-
-        # Thêm widget hiển thị đường dẫn
-        paths_group = QtWidgets.QGroupBox("Đường dẫn lưu trữ")
-        paths_group.setStyleSheet("""
-            QGroupBox {
-                font-size: 16px;
-                font-weight: bold;
-                color: #005BEA;
-                border: 2px solid #B0C4DE;
-                border-radius: 6px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-        """)
-        paths_layout = QtWidgets.QVBoxLayout(paths_group)
-        
-        # Widget cho đường dẫn Excel
-        excel_path_widget = QtWidgets.QWidget()
-        excel_layout = QtWidgets.QHBoxLayout(excel_path_widget)
-        excel_layout.setContentsMargins(0, 0, 0, 0)
-        excel_label = QtWidgets.QLabel("File Excel:")
-        excel_label.setStyleSheet("font-weight: bold; color: black; font-size: 14px;")
-        excel_label.setFixedWidth(80)
-        self.excel_path_display = QtWidgets.QLineEdit()
-        self.excel_path_display.setReadOnly(True)
-        self.excel_path_display.setStyleSheet("""
-            QLineEdit {
-                background-color: #F7F7F7;
-                border: 1px solid #CCCCCC;
-                border-radius: 4px;
-                padding: 4px;
-                color: #333333;
-            }
-        """)
-        excel_open_btn = QtWidgets.QPushButton("Mở")
-        excel_open_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border-radius: 4px;
-                padding: 4px 15px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
-        excel_open_btn.clicked.connect(self.open_excel_file)
-        excel_layout.addWidget(excel_label)
-        excel_layout.addWidget(self.excel_path_display)
-        excel_layout.addWidget(excel_open_btn)
-        
-        # Widget cho đường dẫn folder ảnh
-        image_path_widget = QtWidgets.QWidget()
-        image_layout = QtWidgets.QHBoxLayout(image_path_widget)
-        image_layout.setContentsMargins(0, 0, 0, 0)
-        image_label = QtWidgets.QLabel("Folder ảnh:")
-        image_label.setStyleSheet("font-weight: bold; color: black; font-size: 14px;")
-        image_label.setFixedWidth(80)
-        self.image_path_display = QtWidgets.QLineEdit()
-        self.image_path_display.setReadOnly(True)
-        self.image_path_display.setStyleSheet("""
-            QLineEdit {
-                background-color: #F7F7F7;
-                border: 1px solid #CCCCCC;
-                border-radius: 4px;
-                padding: 4px;
-                color: #333333;
-            }
-        """)
-        image_open_btn = QtWidgets.QPushButton("Mở")
-        image_open_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border-radius: 4px;
-                padding: 4px 15px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
-        image_open_btn.clicked.connect(self.open_image_folder)
-        image_layout.addWidget(image_label)
-        image_layout.addWidget(self.image_path_display)
-        image_layout.addWidget(image_open_btn)
-        
-        # Thêm các widget vào group
-        paths_layout.addWidget(excel_path_widget)
-        paths_layout.addWidget(image_path_widget)
-        
-        # Thêm group vào form
-        form_layout_v.addWidget(paths_group)
-        form_layout_v.addSpacing(10)
 
         self.fields = {}
 
@@ -1322,22 +1215,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def show_success_message(self, message: str):
         self.status_label.setText(message)
         self.status_label.setStyleSheet("color: blue; font-size: 14px; font-weight: bold;")
-
-    def update_paths_display(self):
-        """Cập nhật hiển thị đường dẫn"""
-        if hasattr(self, 'excel_path_display'):
-            self.excel_path_display.setText(self.excel_path)
-        if hasattr(self, 'image_path_display'):
-            self.image_path_display.setText(self.image_folder)
-
-    def open_image_folder(self):
-        """Mở folder chứa ảnh bằng Windows Explorer"""
-        try:
-            if not os.path.exists(self.image_folder):
-                os.makedirs(self.image_folder)
-            os.startfile(self.image_folder)
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Lỗi", f"Không thể mở thư mục ảnh: {e}")
 
 if __name__ == "__main__":
     try:
