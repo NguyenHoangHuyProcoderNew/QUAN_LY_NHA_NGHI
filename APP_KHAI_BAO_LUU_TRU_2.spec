@@ -3,14 +3,14 @@
 block_cipher = None
 
 a = Analysis(
-    ['APP_KHAI_BAO_LUU_TRU_2/APP_KHAI_BAO_LUU_TRU_2.py'],
+    ['APP_KHAI_BAO_LUU_TRU_2.py'],
     pathex=[],
     binaries=[],
     datas=[
-        ('APP_KHAI_BAO_LUU_TRU_2/logo_app.ico', '.'),
-        ('APP_KHAI_BAO_LUU_TRU_2/done.wav', '.'),
-        ('APP_KHAI_BAO_LUU_TRU_2/error.wav', '.'),
-        ('APP_KHAI_BAO_LUU_TRU_2/loading.gif', '.'),
+        ('logo_app.ico', '.'),
+        ('done.wav', '.'),
+        ('error.wav', '.'),
+        ('loading.gif', '.'),
     ],
     hiddenimports=[
         'win32timezone',
@@ -47,7 +47,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='APP_KHAI_BAO_LUU_TRU_2/logo_app.ico'
+    icon='logo_app.ico'
 )
 
 coll = COLLECT(
