@@ -28,20 +28,14 @@ import win32process
 import win32con
 import win32api
 import psutil
+from database import Database
 
 # Tối ưu PyQt
 QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
 QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
 
 # Cache các biến toàn cục để tránh import nhiều lần
-EXCEL_APP = None
 QR_READER = None
-
-def get_excel_app():
-    global EXCEL_APP
-    if EXCEL_APP is None:
-        EXCEL_APP = win32.gencache.EnsureDispatch("Excel.Application")
-    return EXCEL_APP
 
 def get_qr_reader():
     global QR_READER
@@ -257,9 +251,11 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.app_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # Khởi tạo đường dẫn Excel và folder ảnh
-        self.excel_path = os.path.join(self.app_dir, "DS_Cong_Dan.xlsx")
-        self.image_folder = os.path.join(self.app_dir, "DS_Anh_Cong_Dan_da_khai_bao")
+        # Khởi tạo database
+        self.db = Database(self.app_dir)
+        
+        # Khởi tạo đường dẫn folder ảnh
+        self.image_folder = os.path.join(self.app_dir, "data", "images")
 
         # ✅ Gán icon cửa sổ
         icon_path = os.path.join(self.app_dir, "logo_app.ico")
@@ -307,18 +303,14 @@ class MainWindow(QtWidgets.QMainWindow):
     def _createMenus(self):
         menubar = self.menuBar()
         menubar.setNativeMenuBar(False)
+        
         # Cài đặt
         self.action_caidat = QtWidgets.QAction("Cài đặt", self)
         self.action_caidat.triggered.connect(self.on_open_settings)
         menubar.addAction(self.action_caidat)
 
-        # DS Công Dân
-        self.action_open_excel = QtWidgets.QAction("DS Công dân", self)
-        self.action_open_excel.triggered.connect(self.open_excel_file)
-        menubar.addAction(self.action_open_excel)
-
-        # Tìm kiếm
-        self.action_search = QtWidgets.QAction("Tìm kiếm", self)
+        # Danh sách công dân
+        self.action_search = QtWidgets.QAction("Danh sách công dân", self)
         self.action_search.triggered.connect(self.show_search_dialog)
         menubar.addAction(self.action_search)
 
@@ -458,7 +450,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: #333333;
             }
         """)
-        excel_open_btn = QtWidgets.QPushButton("Mở")
+        excel_open_btn = QtWidgets.QPushButton("Xuất Excel")
         excel_open_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4CAF50;
@@ -775,6 +767,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtCore.Qt.SmoothTransformation
             )
             self.front_img_label.setPixmap(pixmap)
+            # Lưu QImage vào biến tạm
+            self.front_image_temp = qt_img
 
     def select_back_image_from_file(self):
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -795,6 +789,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtCore.Qt.SmoothTransformation
             )
             self.back_img_label.setPixmap(pixmap)
+            # Lưu QImage vào biến tạm
+            self.back_image_temp = qt_img
 
     def capture_front_image_from_camera(self):
         if not hasattr(self, "image_capture_cam") or self.image_capture_cam is None or self.camera_cam is None:
@@ -849,10 +845,10 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
 
     def save_temp_image(self, qimage, is_front=True):
+        """Lưu ảnh tạm vào thư mục và trả về đường dẫn tương đối"""
         try:
             if qimage:
-                current_dir = self.app_dir
-                folder_anh = os.path.join(current_dir, "DS_Anh_Cong_Dan_da_khai_bao")
+                folder_anh = os.path.join(self.app_dir, "data", "images")
                 os.makedirs(folder_anh, exist_ok=True)
                 
                 # Lấy họ tên và ngày sinh
@@ -871,6 +867,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     filename = f"{side}_{timestamp}.jpg"
                 
+                # Đảm bảo tên file không chứa ký tự đặc biệt
+                filename = "".join(c for c in filename if c.isalnum() or c in "_-.")
                 filepath = os.path.join(folder_anh, filename)
                 
                 # Nếu file đã tồn tại, thêm số thứ tự vào tên file
@@ -884,7 +882,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 
                 # Lưu ảnh
                 qimage.save(filepath, "JPG", quality=95)
-                return filepath
+                print(f"Đã lưu ảnh tại: {filepath}")
+                
+                # Trả về đường dẫn tương đối so với thư mục ứng dụng
+                rel_path = os.path.join("data", "images", filename)
+                print(f"Đường dẫn tương đối: {rel_path}")
+                return rel_path
+                
         except Exception as e:
             print(f"Lỗi khi lưu ảnh: {e}")
         return ""
@@ -1138,169 +1142,82 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def write_to_excel(self):
         try:
-            current_dir = self.app_dir
-            excel_path = os.path.join(current_dir, "DS_Cong_Dan.xlsx")
-            folder_anh = os.path.join(current_dir, "DS_Anh_Cong_Dan_da_khai_bao")
-            os.makedirs(folder_anh, exist_ok=True)
-
             # Lưu ảnh từ bộ nhớ tạm vào file nếu có
             front_path = ""
             back_path = ""
+            
+            # Tạo thư mục ảnh nếu chưa tồn tại
+            folder_anh = os.path.join(self.app_dir, "data", "images")
+            os.makedirs(folder_anh, exist_ok=True)
+            
             if self.front_image_temp:
                 front_path = self.save_temp_image(self.front_image_temp, is_front=True)
+                print(f"Đã lưu ảnh mặt trước: {front_path}")
             if self.back_image_temp:
                 back_path = self.save_temp_image(self.back_image_temp, is_front=False)
+                print(f"Đã lưu ảnh mặt sau: {back_path}")
 
-            # Khởi tạo Excel application mới
-            excel = self.dong_file_excel_neu_dang_mo(excel_path)
-            excel.Visible = False
-            excel.DisplayAlerts = False
-            excel.ScreenUpdating = False
-            excel.EnableEvents = False
-
-            if not os.path.exists(excel_path):
-                wb = excel.Workbooks.Add()
-                ws = wb.Sheets(1)
-                headers = ["Số giấy tờ", "Số CMND cũ", "Họ và tên", "Giới tính", "Ngày sinh",
-                        "Nơi thường trú", "Ngày cấp", "Loại giấy tờ", "Tên phòng", "Thời gian ghi",
-                        "Ảnh mặt trước", "Ảnh mặt sau"]
-                rng = ws.Range(ws.Cells(1, 1), ws.Cells(1, len(headers)))
-                rng.Value = headers
-                rng.Font.Name = "Times New Roman"
-                rng.Font.Size = 16
-                rng.Font.Bold = True
-                rng.Interior.Color = 0x00C0FF
-                rng.HorizontalAlignment = -4108
-
-                # Định dạng tất cả các cột ngày tháng là text
-                ws.Range("E:E").NumberFormat = "@"  # Ngày sinh
-                ws.Range("G:G").NumberFormat = "@"  # Ngày cấp
-                ws.Range("J:J").NumberFormat = "@"  # Thời gian ghi
-
-                # Tự động điều chỉnh độ rộng cột
-                ws.Range("A:L").EntireColumn.AutoFit()
-
-                wb.SaveAs(excel_path)
-                wb.Close()
-
-            wb = excel.Workbooks.Open(excel_path)
-            ws = wb.Sheets(1)
-            
-            # Tìm dòng cuối cùng một cách chính xác hơn
-            last_row = 1  # Bắt đầu từ dòng 1
-            while True:
-                if not ws.Cells(last_row, 1).Value:  # Nếu ô A{last_row} trống
-                    # Kiểm tra thêm các cột khác để đảm bảo dòng thực sự trống
-                    is_empty = True
-                    for col in range(1, 13):  # Kiểm tra từ cột 1 đến 12
-                        if ws.Cells(last_row, col).Value:
-                            is_empty = False
-                            break
-                    if is_empty:
-                        break
-                last_row += 1
-
-            # Nếu là dòng đầu tiên (chỉ có header), ghi từ dòng 2
-            if last_row == 1:
-                last_row = 2
-
-            # Lấy dữ liệu từ các trường, nếu trống thì để chuỗi rỗng
-            # Lấy thời gian hiện tại từ hệ thống
+            # Lấy thời gian hiện tại
             t = time.localtime()
             current_time = f"{t.tm_mday:02d}/{t.tm_mon:02d}/{t.tm_year} {t.tm_hour:02d}:{t.tm_min:02d}"
             
-            # Lấy ngày sinh và ngày cấp như người dùng nhập
+            # Lấy ngày sinh và ngày cấp
             ngay_sinh = self.fields["Ngày sinh"].date()
             ngay_cap = self.fields["Ngày cấp giấy tờ"].date()
             
-            data = [
-                self.fields["Số giấy tờ"].text().strip(),
-                self.fields["Số CMND cũ (nếu có)"].text().strip(),
-                self.fields["Họ và tên"].text().strip(),
-                "Nam" if self.rb_nam.isChecked() else ("Nữ" if self.rb_nu.isChecked() else ""),
-                f"{ngay_sinh.day():02d}/{ngay_sinh.month():02d}/{ngay_sinh.year()}" if ngay_sinh else "",
-                self.fields["Nơi thường trú"].text().strip(),
-                f"{ngay_cap.day():02d}/{ngay_cap.month():02d}/{ngay_cap.year()}" if ngay_cap else "",
-                self.fields["Loại giấy tờ"].text().strip(),
-                self.cmb_phong.currentText().strip(),
-                current_time,  # Thời gian ghi đã được định dạng sẵn
-                "Ảnh mặt trước" if front_path else "",  # Chỉ hiển thị text, hyperlink sẽ được thêm sau
-                "Ảnh mặt sau" if back_path else ""      # Chỉ hiển thị text, hyperlink sẽ được thêm sau
-            ]
+            # Chuẩn bị dữ liệu
+            data = {
+                "so_giay_to": self.fields["Số giấy tờ"].text().strip(),
+                "so_cmnd_cu": self.fields["Số CMND cũ (nếu có)"].text().strip(),
+                "ho_ten": self.fields["Họ và tên"].text().strip(),
+                "gioi_tinh": "Nam" if self.rb_nam.isChecked() else ("Nữ" if self.rb_nu.isChecked() else ""),
+                "ngay_sinh": f"{ngay_sinh.day():02d}/{ngay_sinh.month():02d}/{ngay_sinh.year()}" if ngay_sinh else "",
+                "noi_thuong_tru": self.fields["Nơi thường trú"].text().strip(),
+                "ngay_cap": f"{ngay_cap.day():02d}/{ngay_cap.month():02d}/{ngay_cap.year()}" if ngay_cap else "",
+                "loai_giay_to": self.fields["Loại giấy tờ"].text().strip(),
+                "ten_phong": self.cmb_phong.currentText().strip(),
+                "thoi_gian_ghi": current_time,
+                "anh_mat_truoc": front_path,
+                "anh_mat_sau": back_path
+            }
 
-            # Ghi dữ liệu một lần
-            rng = ws.Range(ws.Cells(last_row, 1), ws.Cells(last_row, len(data)))
-            rng.Value = [data]
-            
-            # Định dạng
-            rng.Font.Size = 11
-            rng.Font.Name = "Times New Roman"
-            rng.HorizontalAlignment = -4108
-
-            # Định dạng cột thời gian ghi (cột J) là text để giữ nguyên định dạng
-            ws.Range(f"J{last_row}").NumberFormat = "@"
-            
-            # Định dạng cột ngày sinh và ngày cấp là text
-            ws.Range(f"E{last_row}").NumberFormat = "@"
-            ws.Range(f"G{last_row}").NumberFormat = "@"
-
-            # Thêm hyperlink cho ảnh nếu có
-            if front_path and os.path.exists(front_path):
-                # Chuyển đổi đường dẫn thành đường dẫn tuyệt đối và chuẩn hóa
-                abs_front_path = os.path.abspath(front_path)
-                file_url = f"file:///{abs_front_path.replace(os.sep, '/')}"
-                ws.Hyperlinks.Add(
-                    Anchor=ws.Range(f"K{last_row}"),
-                    Address=file_url,
-                    TextToDisplay="Ảnh mặt trước"
-                )
-
-            if back_path and os.path.exists(back_path):
-                # Chuyển đổi đường dẫn thành đường dẫn tuyệt đối và chuẩn hóa
-                abs_back_path = os.path.abspath(back_path)
-                file_url = f"file:///{abs_back_path.replace(os.sep, '/')}"
-                ws.Hyperlinks.Add(
-                    Anchor=ws.Range(f"L{last_row}"),
-                    Address=file_url,
-                    TextToDisplay="Ảnh mặt sau"
-                )
-
-            # AutoFit và border
-            ws.Range("A:L").EntireColumn.AutoFit()
-            rng = ws.Range(f"A1:L{last_row}")
-            for i in range(7, 13):
-                rng.Borders(i).LineStyle = 1
-                rng.Borders(i).Weight = 2
-
-            # Bật lại các tính năng Excel trước khi lưu
-            excel.ScreenUpdating = True
-            excel.EnableEvents = True
-            
-            wb.Save()
-            wb.Close()
-
-            self.front_image_temp = None
-            self.back_image_temp = None
-            self.clear_all_fields()
-            self.show_success_message(f"✅ Đã lưu công dân tại dòng {last_row} vào DS_Cong_Dan.xlsx")
+            # Lưu vào database
+            if self.db.them_cong_dan(data):
+                self.front_image_temp = None
+                self.back_image_temp = None
+                self.clear_all_fields()
+                self.show_success_message("✅ Đã lưu thông tin công dân vào cơ sở dữ liệu")
+            else:
+                QtWidgets.QMessageBox.critical(self, "Lỗi", "Không thể lưu thông tin vào cơ sở dữ liệu")
 
         except Exception as e:
-            # Đảm bảo bật lại các tính năng Excel trong trường hợp lỗi
-            try:
-                if excel:
-                    excel.ScreenUpdating = True
-                    excel.EnableEvents = True
-            except:
-                pass
-            QtWidgets.QMessageBox.critical(self, "Lỗi", f"Không thể ghi Excel: {e}")
+            QtWidgets.QMessageBox.critical(self, "Lỗi", f"Lỗi khi lưu dữ liệu: {e}")
 
     def open_excel_file(self):
         try:
-            excel_path = os.path.join(self.app_dir, "DS_Cong_Dan.xlsx")
-            if os.path.exists(excel_path):
+            # Tạo thư mục data nếu chưa tồn tại
+            data_dir = os.path.join(self.app_dir, "data")
+            os.makedirs(data_dir, exist_ok=True)
+            
+            # Tạo tên file với timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            excel_path = os.path.join(data_dir, f"DS_Cong_Dan_{timestamp}.xlsx")
+            
+            # Đóng tất cả các file Excel đang mở
+            self.dong_file_excel_neu_dang_mo(excel_path)
+            
+            # Xuất dữ liệu ra Excel
+            if self.db.xuat_excel(excel_path):
+                # Hiển thị thông báo thành công
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Thành công",
+                    f"Đã xuất dữ liệu ra file Excel:\n{excel_path}"
+                )
+                # Mở file Excel
                 os.startfile(excel_path)
             else:
-                QtWidgets.QMessageBox.warning(self, "Không tìm thấy file", "Chưa có dữ liệu khai báo hoặc file chưa được tạo.")
+                QtWidgets.QMessageBox.warning(self, "Lỗi", "Không thể xuất dữ liệu ra Excel.")
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Lỗi", f"Không thể mở file Excel: {e}")
 
@@ -1329,7 +1246,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def update_paths_display(self):
         """Cập nhật hiển thị đường dẫn"""
         if hasattr(self, 'excel_path_display'):
-            self.excel_path_display.setText(self.excel_path)
+            data_dir = os.path.join(self.app_dir, "data")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            temp_excel = os.path.join(data_dir, f"DS_Cong_Dan_{timestamp}.xlsx")
+            self.excel_path_display.setText(temp_excel)
         if hasattr(self, 'image_path_display'):
             self.image_path_display.setText(self.image_folder)
 
@@ -1385,50 +1305,55 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # Xử lý và hiển thị ảnh mặt trước
             front_path = dialog.selected_data["Ảnh mặt trước"]
-            if front_path and os.path.exists(front_path):
-                # Cập nhật đường dẫn
-                self.front_img_path.setText(front_path)
-                # Đọc và hiển thị ảnh
-                img = cv2.imread(front_path)
-                if img is not None:
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    h, w, ch = img.shape
-                    bytes_per_line = ch * w
-                    qt_img = QtGui.QImage(img.data, w, h, bytes_per_line, QtGui.QImage.Format.Format_RGB888)
-                    # Tạo pixmap và scale theo kích thước label
-                    pixmap = QtGui.QPixmap.fromImage(qt_img)
-                    scaled_pixmap = pixmap.scaled(
-                        self.front_img_label.width(),
-                        self.front_img_label.height(),
-                        QtCore.Qt.KeepAspectRatio,
-                        QtCore.Qt.SmoothTransformation
-                    )
-                    self.front_img_label.setPixmap(scaled_pixmap)
-                    self.front_image_temp = qt_img
+            if front_path:
+                full_front_path = os.path.join(self.app_dir, front_path)
+                if os.path.exists(full_front_path):
+                    # Cập nhật đường dẫn
+                    self.front_img_path.setText(full_front_path)
+                    # Đọc và hiển thị ảnh
+                    img = cv2.imread(full_front_path)
+                    if img is not None:
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        h, w, ch = img.shape
+                        bytes_per_line = ch * w
+                        qt_img = QtGui.QImage(img.data, w, h, bytes_per_line, QtGui.QImage.Format.Format_RGB888)
+                        # Lưu vào biến tạm
+                        self.front_image_temp = qt_img
+                        # Tạo pixmap và scale theo kích thước label
+                        pixmap = QtGui.QPixmap.fromImage(qt_img)
+                        scaled_pixmap = pixmap.scaled(
+                            self.front_img_label.width(),
+                            self.front_img_label.height(),
+                            QtCore.Qt.IgnoreAspectRatio,
+                            QtCore.Qt.SmoothTransformation
+                        )
+                        self.front_img_label.setPixmap(scaled_pixmap)
 
             # Xử lý và hiển thị ảnh mặt sau
             back_path = dialog.selected_data["Ảnh mặt sau"]
-            if back_path and os.path.exists(back_path):
-                # Cập nhật đường dẫn
-                self.back_img_path.setText(back_path)
-                # Đọc và hiển thị ảnh
-                img = cv2.imread(back_path)
-                if img is not None:
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    h, w, ch = img.shape
-                    bytes_per_line = ch * w
-                    qt_img = QtGui.QImage(img.data, w, h, bytes_per_line, QtGui.QImage.Format.Format_RGB888)
-                    # Tạo pixmap và scale theo kích thước label
-                    pixmap = QtGui.QPixmap.fromImage(qt_img)
-                    scaled_pixmap = pixmap.scaled(
-                        self.back_img_label.width(),
-                        self.back_img_label.height(),
-                        QtCore.Qt.IgnoreAspectRatio,
-                        QtCore.Qt.SmoothTransformation
-                    )
-                    self.back_img_label.setPixmap(pixmap)
-                    # Lưu ảnh vào bộ nhớ tạm
-                    self.back_image_temp = qt_img
+            if back_path:
+                full_back_path = os.path.join(self.app_dir, back_path)
+                if os.path.exists(full_back_path):
+                    # Cập nhật đường dẫn
+                    self.back_img_path.setText(full_back_path)
+                    # Đọc và hiển thị ảnh
+                    img = cv2.imread(full_back_path)
+                    if img is not None:
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        h, w, ch = img.shape
+                        bytes_per_line = ch * w
+                        qt_img = QtGui.QImage(img.data, w, h, bytes_per_line, QtGui.QImage.Format.Format_RGB888)
+                        # Lưu vào biến tạm
+                        self.back_image_temp = qt_img
+                        # Tạo pixmap và scale theo kích thước label
+                        pixmap = QtGui.QPixmap.fromImage(qt_img)
+                        scaled_pixmap = pixmap.scaled(
+                            self.back_img_label.width(),
+                            self.back_img_label.height(),
+                            QtCore.Qt.IgnoreAspectRatio,
+                            QtCore.Qt.SmoothTransformation
+                        )
+                        self.back_img_label.setPixmap(scaled_pixmap)
             
             self.show_success_message("✅ Đã điền thông tin từ dữ liệu có sẵn")
 
@@ -1495,19 +1420,26 @@ class SearchDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent = parent
-        self.setWindowTitle("Tìm kiếm thông tin")
+        self.setWindowTitle("Danh sách công dân")
         self.setModal(True)
         
-        # Lấy kích thước màn hình
-        screen = QtWidgets.QApplication.desktop().screenGeometry()
-        self.resize(int(screen.width() * 0.95), int(screen.height() * 0.8))
+        # Lấy kích thước của cửa sổ chính
+        if parent:
+            self.resize(1380, 800)
+        else:
+            self.resize(1200, 800)
 
         # Thiết lập layout chính
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
-        
-        # Widget tìm kiếm
+
+        # Widget tìm kiếm và lọc
+        filter_widget = QtWidgets.QWidget()
+        filter_layout = QtWidgets.QHBoxLayout(filter_widget)
+        filter_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Widget tìm kiếm theo tên
         search_widget = QtWidgets.QWidget()
         search_layout = QtWidgets.QHBoxLayout(search_widget)
         search_layout.setContentsMargins(0, 0, 0, 0)
@@ -1519,9 +1451,41 @@ class SearchDialog(QtWidgets.QDialog):
                 border: 1px solid #B0C4DE;
                 border-radius: 5px;
                 font-size: 14px;
+                min-width: 200px;
             }
         """)
         
+        # Widget lọc theo ngày
+        date_filter_widget = QtWidgets.QWidget()
+        date_filter_layout = QtWidgets.QHBoxLayout(date_filter_widget)
+        date_filter_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.from_date = FloatingCalendarDateEdit()
+        self.from_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
+        self.to_date = FloatingCalendarDateEdit()
+        self.to_date.setDate(QtCore.QDate.currentDate())
+        
+        date_filter_layout.addWidget(QtWidgets.QLabel("Từ ngày:"))
+        date_filter_layout.addWidget(self.from_date)
+        date_filter_layout.addWidget(QtWidgets.QLabel("Đến ngày:"))
+        date_filter_layout.addWidget(self.to_date)
+        
+        # Nút xuất Excel
+        self.btn_export = QtWidgets.QPushButton("Xuất Excel")
+        self.btn_export.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 8px 15px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        self.btn_export.clicked.connect(self.export_to_excel)
+
         # Thêm loading spinner
         self.loading_label = QtWidgets.QLabel()
         self.loading_movie = QtGui.QMovie("loading.gif")
@@ -1545,18 +1509,25 @@ class SearchDialog(QtWidgets.QDialog):
                 background-color: #CCCCCC;
             }
         """)
+
+        # Thêm các widget vào layout
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(self.loading_label)
         search_layout.addWidget(self.search_btn)
-        layout.addWidget(search_widget)
+        
+        filter_layout.addWidget(search_widget)
+        filter_layout.addWidget(date_filter_widget)
+        filter_layout.addWidget(self.btn_export)
+        
+        layout.addWidget(filter_widget)
 
         # Bảng kết quả
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(11)
+        self.table.setColumnCount(13)  # Thêm cột thời gian ghi
         self.table.setHorizontalHeaderLabels([
-            "Số giấy tờ", "Số CMND cũ", "Họ và tên", "Giới tính", 
+            "STT", "Số giấy tờ", "Số CMND cũ", "Họ và tên", "Giới tính", 
             "Ngày sinh", "Nơi thường trú", "Ngày cấp", "Loại giấy tờ", "Tên phòng",
-            "Ảnh mặt trước", "Ảnh mặt sau"
+            "Thời gian ghi", "Ảnh mặt trước", "Ảnh mặt sau"
         ])
         
         # Thiết lập style cho bảng
@@ -1593,6 +1564,7 @@ class SearchDialog(QtWidgets.QDialog):
         # Thiết lập chiều cao dòng
         self.table.verticalHeader().setDefaultSectionSize(150)
         self.table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
+        self.table.verticalHeader().hide()  # Ẩn header dọc vì đã có cột STT
         
         # Cho phép cuộn mượt
         self.table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
@@ -1643,222 +1615,18 @@ class SearchDialog(QtWidgets.QDialog):
         self.btn_use.setEnabled(False)
         self.table.itemSelectionChanged.connect(self.on_selection_changed)
         
-        # Cache dữ liệu Excel và index tìm kiếm
-        self.excel_data = []
-        self.name_index = {}
-        self.load_excel_data()
-        
         # Timer cho debounce tìm kiếm
         self.search_timer = QtCore.QTimer()
         self.search_timer.setSingleShot(True)
         self.search_timer.timeout.connect(self.start_search)
 
-    def display_results(self, results):
-        """Hiển thị kết quả tìm kiếm"""
-        self.table.setRowCount(0)
-        
-        for row_data in results:
-            current_row = self.table.rowCount()
-            self.table.insertRow(current_row)
-            
-            # Hiển thị thông tin
-            for col in range(9):
-                item = QtWidgets.QTableWidgetItem(row_data[col])
-                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
-                self.table.setItem(current_row, col, item)
-            
-            # Hiển thị ảnh
-            for col, img_idx in [(9, 9), (10, 10)]:
-                img_path = row_data[img_idx]
-                if img_path and os.path.exists(img_path):
-                    label = self.create_image_label(img_path)
-                else:
-                    label = self.create_image_label(None)
-                self.table.setCellWidget(current_row, col, label)
-        
-        # Ẩn loading và enable nút tìm kiếm
-        self.loading_label.hide()
-        self.loading_movie.stop()
-        self.search_btn.setEnabled(True)
-        
-        # Tự động điều chỉnh kích thước cột theo nội dung
-        self.table.resizeColumnsToContents()
-        
-        # Đảm bảo cột ảnh có kích thước tối thiểu
-        if self.table.columnWidth(9) < 150:  # Ảnh mặt trước
-            self.table.setColumnWidth(9, 150)
-        if self.table.columnWidth(10) < 150:  # Ảnh mặt sau
-            self.table.setColumnWidth(10, 150)
-            
-        # Tự động điều chỉnh chiều rộng của cửa sổ theo nội dung
-        total_width = 0
-        for i in range(self.table.columnCount()):
-            total_width += self.table.columnWidth(i)
-        
-        # Thêm margin và scrollbar
-        total_width += 50
-        
-        # Giới hạn kích thước tối đa là 95% chiều rộng màn hình
-        screen = QtWidgets.QApplication.desktop().screenGeometry()
-        max_width = int(screen.width() * 0.95)
-        new_width = min(total_width, max_width)
-        
-        # Cập nhật kích thước cửa sổ
-        self.resize(new_width, self.height())
+        # Hiển thị tất cả công dân khi mở dialog
+        QtCore.QTimer.singleShot(100, self.display_all_citizens)
 
-    def on_selection_changed(self):
-        selected_rows = self.table.selectedItems()
-        if selected_rows:
-            self.btn_use.setEnabled(True)
-            row = selected_rows[0].row()
-            
-            # Lấy đường dẫn ảnh từ cell widget
-            front_cell = self.table.cellWidget(row, 9)  # Cột ảnh mặt trước
-            back_cell = self.table.cellWidget(row, 10)  # Cột ảnh mặt sau
-            
-            # Tìm đường dẫn ảnh trong thư mục ảnh
-            image_folder = os.path.join(self.parent.app_dir, "DS_Anh_Cong_Dan_da_khai_bao")
-            ho_ten = self.table.item(row, 2).text().strip()  # Lấy họ tên từ cột 3
-            
-            front_img_path = ""
-            back_img_path = ""
-            
-            if os.path.exists(image_folder):
-                # Tìm file ảnh mặt trước
-                for file in os.listdir(image_folder):
-                    if file.endswith(('.jpg', '.jpeg', '.png')):
-                        if "mat_truoc" in file and unidecode(ho_ten).replace(" ", "_") in unidecode(file):
-                            front_img_path = os.path.join(image_folder, file)
-                            break
-                
-                # Tìm file ảnh mặt sau
-                for file in os.listdir(image_folder):
-                    if file.endswith(('.jpg', '.jpeg', '.png')):
-                        if "mat_sau" in file and unidecode(ho_ten).replace(" ", "_") in unidecode(file):
-                            back_img_path = os.path.join(image_folder, file)
-                            break
-
-            self.selected_data = {
-                "Số giấy tờ": self.table.item(row, 0).text(),
-                "Số CMND cũ (nếu có)": self.table.item(row, 1).text(),
-                "Họ và tên": self.table.item(row, 2).text(),
-                "Giới tính": self.table.item(row, 3).text(),
-                "Ngày sinh": self.table.item(row, 4).text(),
-                "Nơi thường trú": self.table.item(row, 5).text(),
-                "Ngày cấp giấy tờ": self.table.item(row, 6).text(),
-                "Loại giấy tờ": self.table.item(row, 7).text(),
-                "Tên phòng lưu trú": self.table.item(row, 8).text(),
-                "Ảnh mặt trước": front_img_path,
-                "Ảnh mặt sau": back_img_path
-            }
-        else:
-            self.btn_use.setEnabled(False)
-            self.selected_data = None
-
-    def create_image_label(self, image_path):
-        """Tạo QLabel chứa ảnh với kích thước phù hợp"""
-        label = QtWidgets.QLabel()
-        label.setFixedSize(140, 140)
-        label.setAlignment(QtCore.Qt.AlignCenter)
-        
-        if image_path and os.path.exists(image_path):
-            img = cv2.imread(image_path)
-            if img is not None:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                h, w, ch = img.shape
-                bytes_per_line = ch * w
-                qt_img = QtGui.QImage(img.data, w, h, bytes_per_line, QtGui.QImage.Format.Format_RGB888)
-                pixmap = QtGui.QPixmap.fromImage(qt_img).scaled(
-                    140, 140,
-                    QtCore.Qt.KeepAspectRatio,
-                    QtCore.Qt.SmoothTransformation
-                )
-                label.setPixmap(pixmap)
-        else:
-            label.setText("Không có ảnh")
-            label.setStyleSheet("background-color: #F0F0F0; border: 1px solid #CCCCCC;")
-            
-        return label
-
-    def load_excel_data(self):
-        """Tải dữ liệu Excel và tạo index tìm kiếm"""
-        try:
-            if not os.path.exists(self.parent.excel_path):
-                return
-
-            excel = win32.gencache.EnsureDispatch("Excel.Application")
-            excel.Visible = False
-            excel.DisplayAlerts = False
-            
-            wb = excel.Workbooks.Open(self.parent.excel_path)
-            ws = wb.Sheets(1)
-            
-            last_row = ws.Cells(ws.Rows.Count, "A").End(-4162).Row
-            
-            # Đọc toàn bộ dữ liệu và tạo index
-            for row in range(2, last_row + 1):
-                row_data = []
-                # Đọc các cột thông tin (A đến I)
-                for col in range(1, 10):
-                    value = ws.Cells(row, col).Value
-                    if col in [1, 2]:  # Số giấy tờ và CMND
-                        text = self.format_number(value)
-                    elif col in [5, 7]:  # Ngày sinh và ngày cấp
-                        text = normalize_date(value) or str(value or "")
-                    else:
-                        text = str(value or "")
-                    row_data.append(text)
-
-                # Đọc cột ảnh (K và L)
-                for col in [11, 12]:  # K=11, L=12
-                    cell = ws.Cells(row, col)
-                    img_path = self.extract_image_path(cell)
-                    row_data.append(img_path)
-                
-                # Thêm vào danh sách và index
-                self.excel_data.append(row_data)
-                
-                # Tạo index cho tên (cột 2)
-                name = row_data[2].lower()
-                if name:
-                    if name not in self.name_index:
-                        self.name_index[name] = []
-                    self.name_index[name].append(len(self.excel_data) - 1)
-            
-            wb.Close(False)
-            excel.Quit()
-            
-        except Exception as e:
-            print(f"Lỗi khi tải dữ liệu Excel: {e}")
-
-    def format_number(self, value):
-        """Xử lý số để loại bỏ .0"""
-        if isinstance(value, (int, float)):
-            return str(int(value))
-        return str(value or "")
-
-    def extract_image_path(self, cell):
-        """Trích xuất đường dẫn ảnh từ cell Excel"""
-        try:
-            # Lấy công thức hyperlink
-            formula = cell.Formula
-            if not formula or not isinstance(formula, str):
-                return ""
-                
-            # Nếu là công thức HYPERLINK
-            if formula.startswith('=HYPERLINK('):
-                # Tách các phần trong công thức HYPERLINK("path", "text")
-                parts = formula.replace('=HYPERLINK(', '').rstrip(')').split(',', 1)
-                if len(parts) >= 1:
-                    # Lấy phần đường dẫn và loại bỏ dấu ngoặc kép
-                    path = parts[0].strip('"').strip("'")
-                    return path
-                    
-            return ""
-            
-        except Exception as e:
-            print(f"Lỗi khi trích xuất đường dẫn ảnh: {e}")
-            return ""
+    def display_all_citizens(self):
+        """Hiển thị tất cả công dân"""
+        self.search_input.clear()
+        self.start_search()
 
     def start_search(self):
         """Bắt đầu tìm kiếm"""
@@ -1867,17 +1635,166 @@ class SearchDialog(QtWidgets.QDialog):
         self.loading_label.show()
         self.loading_movie.start()
         
-        # Lấy text tìm kiếm
-        search_text = self.search_input.text().strip().lower()
+        # Lấy text tìm kiếm và khoảng thời gian
+        search_text = self.search_input.text().strip()
+        from_date = self.from_date.date().toString("dd/MM/yyyy")
+        to_date = self.to_date.date().toString("dd/MM/yyyy")
         
-        # Tạo và khởi động worker thread
-        if self.search_worker is not None:
-            self.search_worker.quit()
-            self.search_worker.wait()
+        # Tìm kiếm trong database với bộ lọc ngày
+        results = self.parent.db.tim_kiem_theo_ten_va_ngay(search_text, from_date, to_date)
+        
+        # Hiển thị kết quả
+        self.display_results(results)
+
+    def display_results(self, results):
+        """Hiển thị kết quả tìm kiếm"""
+        self.table.setRowCount(0)
+        
+        for idx, row_data in enumerate(results, 1):
+            current_row = self.table.rowCount()
+            self.table.insertRow(current_row)
             
-        self.search_worker = SearchWorker(search_text, self.name_index, self.excel_data)
-        self.search_worker.resultReady.connect(self.display_results)
-        self.search_worker.start()
+            # Thêm STT
+            stt_item = QtWidgets.QTableWidgetItem(str(idx))
+            stt_item.setTextAlignment(QtCore.Qt.AlignCenter)
+            self.table.setItem(current_row, 0, stt_item)
+            
+            # Hiển thị thông tin
+            columns = [
+                'so_giay_to', 'so_cmnd_cu', 'ho_ten', 'gioi_tinh', 
+                'ngay_sinh', 'noi_thuong_tru', 'ngay_cap', 'loai_giay_to', 
+                'ten_phong', 'thoi_gian_ghi'
+            ]
+            
+            for col, key in enumerate(columns, 1):  # Bắt đầu từ cột 1 vì cột 0 là STT
+                item = QtWidgets.QTableWidgetItem(str(row_data[key] or ''))
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                self.table.setItem(current_row, col, item)
+            
+            # Hiển thị ảnh
+            for col, key in [(11, 'anh_mat_truoc'), (12, 'anh_mat_sau')]:
+                img_path = row_data[key]
+                if img_path:
+                    # Chuyển đổi đường dẫn tương đối thành tuyệt đối
+                    full_path = os.path.abspath(os.path.join(self.parent.app_dir, img_path))
+                    print(f"Đang tìm ảnh tại: {full_path}")
+                    if os.path.exists(full_path):
+                        print(f"Tìm thấy ảnh tại: {full_path}")
+                        label = self.create_image_label(full_path)
+                        label.image_path = img_path  # Lưu đường dẫn tương đối
+                    else:
+                        print(f"Không tìm thấy file ảnh: {full_path}")
+                        label = self.create_image_label(None)
+                        label.image_path = ""
+                else:
+                    print("Không có đường dẫn ảnh")
+                    label = self.create_image_label(None)
+                    label.image_path = ""
+                self.table.setCellWidget(current_row, col, label)
+        
+        # Ẩn loading và enable nút tìm kiếm
+        self.loading_label.hide()
+        self.loading_movie.stop()
+        self.search_btn.setEnabled(True)
+        
+        # Tự động điều chỉnh kích thước cột
+        self.table.resizeColumnsToContents()
+        
+        # Đặt kích thước cố định cho một số cột
+        self.table.setColumnWidth(0, 50)  # STT
+        if self.table.columnWidth(10) < 150:  # Ảnh mặt trước
+            self.table.setColumnWidth(10, 150)
+        if self.table.columnWidth(11) < 150:  # Ảnh mặt sau
+            self.table.setColumnWidth(11, 150)
+
+    def export_to_excel(self):
+        """Xuất dữ liệu hiện tại ra file Excel"""
+        try:
+            # Tạo đường dẫn cho file Excel
+            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            excel_path = os.path.join(self.parent.app_dir, f"DS_Cong_Dan_{current_time}.xlsx")
+            
+            # Lấy dữ liệu hiện tại (đã được lọc)
+            search_text = self.search_input.text().strip()
+            from_date = self.from_date.date().toString("dd/MM/yyyy")
+            to_date = self.to_date.date().toString("dd/MM/yyyy")
+            results = self.parent.db.tim_kiem_theo_ten_va_ngay(search_text, from_date, to_date)
+            
+            # Xuất ra Excel
+            if self.parent.db.xuat_excel_tu_ket_qua(excel_path, results):
+                QtWidgets.QMessageBox.information(self, "Thành công", 
+                    f"Đã xuất dữ liệu ra file Excel:\n{excel_path}")
+                os.startfile(excel_path)
+            else:
+                QtWidgets.QMessageBox.warning(self, "Lỗi", "Không thể xuất dữ liệu ra Excel.")
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Lỗi", f"Lỗi khi xuất Excel: {e}")
+
+    def on_selection_changed(self):
+        selected_rows = self.table.selectedItems()
+        if selected_rows:
+            self.btn_use.setEnabled(True)
+            row = selected_rows[0].row()
+            
+            self.selected_data = {
+                "Số giấy tờ": self.table.item(row, 1).text(),
+                "Số CMND cũ (nếu có)": self.table.item(row, 2).text(),
+                "Họ và tên": self.table.item(row, 3).text(),
+                "Giới tính": self.table.item(row, 4).text(),
+                "Ngày sinh": self.table.item(row, 5).text(),
+                "Nơi thường trú": self.table.item(row, 6).text(),
+                "Ngày cấp giấy tờ": self.table.item(row, 7).text(),
+                "Loại giấy tờ": self.table.item(row, 8).text(),
+                "Tên phòng lưu trú": self.table.item(row, 9).text(),
+                "Thời gian ghi": self.table.item(row, 10).text(),
+                "Ảnh mặt trước": self.get_image_path(row, 11),
+                "Ảnh mặt sau": self.get_image_path(row, 12)
+            }
+        else:
+            self.btn_use.setEnabled(False)
+            self.selected_data = None
+
+    def get_image_path(self, row, col):
+        """Lấy đường dẫn ảnh từ cell widget"""
+        cell_widget = self.table.cellWidget(row, col)
+        if cell_widget and hasattr(cell_widget, 'image_path'):
+            return cell_widget.image_path
+        return ""
+
+    def create_image_label(self, image_path):
+        """Tạo QLabel chứa ảnh với kích thước phù hợp"""
+        label = QtWidgets.QLabel()
+        label.setFixedSize(140, 140)
+        label.setAlignment(QtCore.Qt.AlignCenter)
+        label.image_path = ""  # Khởi tạo thuộc tính image_path
+        
+        if image_path and os.path.exists(image_path):
+            try:
+                img = cv2.imread(image_path)
+                if img is not None:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    h, w, ch = img.shape
+                    bytes_per_line = ch * w
+                    qt_img = QtGui.QImage(img.data, w, h, bytes_per_line, QtGui.QImage.Format.Format_RGB888)
+                    pixmap = QtGui.QPixmap.fromImage(qt_img).scaled(
+                        140, 140,
+                        QtCore.Qt.IgnoreAspectRatio,  # Thay đổi từ KeepAspectRatio thành IgnoreAspectRatio
+                        QtCore.Qt.SmoothTransformation
+                    )
+                    label.setPixmap(pixmap)
+                    label.image_path = os.path.relpath(image_path, self.parent.app_dir)  # Lưu đường dẫn tương đối
+                else:
+                    label.setText("Lỗi đọc ảnh")
+                    label.setStyleSheet("background-color: #FFE6E6; border: 1px solid #FFCCCC;")
+            except Exception as e:
+                print(f"Lỗi khi đọc ảnh {image_path}: {e}")
+                label.setText("Lỗi đọc ảnh")
+                label.setStyleSheet("background-color: #FFE6E6; border: 1px solid #FFCCCC;")
+        else:
+            label.setText("Không có ảnh")
+            label.setStyleSheet("background-color: #F0F0F0; border: 1px solid #CCCCCC;")
+            
+        return label
 
 if __name__ == "__main__":
     try:
