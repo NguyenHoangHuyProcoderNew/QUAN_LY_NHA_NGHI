@@ -70,6 +70,8 @@ class MainWindow(QMainWindow):
             return os.path.dirname(sys.executable)
         else:
             # Nếu đang chạy từ source code
+            return os.path.dirname(os.path.abspath(__file__))
+
 # Tắt output để tránh lỗi khi build exe và tăng tốc khởi động
 if hasattr(sys, 'frozen'):
     os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = os.path.join(sys._MEIPASS, 'platforms')
@@ -519,23 +521,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: #333333;
             }
         """)
-        excel_open_btn = QtWidgets.QPushButton("Xuất Excel")
-        excel_open_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border-radius: 4px;
-                padding: 4px 15px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
-        excel_open_btn.clicked.connect(self.open_excel_file)
         excel_layout.addWidget(excel_label)
         excel_layout.addWidget(self.excel_path_display)
-        excel_layout.addWidget(excel_open_btn)
         
         # Widget cho đường dẫn folder ảnh
         image_path_widget = QtWidgets.QWidget()
@@ -1250,14 +1237,37 @@ class MainWindow(QtWidgets.QMainWindow):
                 "anh_mat_sau": back_path
             }
 
-            # Lưu vào database
-            if self.db.them_cong_dan(data):
-                self.front_image_temp = None
-                self.back_image_temp = None
-                self.clear_all_fields()
-                self.show_success_message("✅ Đã lưu thông tin công dân vào cơ sở dữ liệu")
+            # Kiểm tra dữ liệu bắt buộc
+            if not data["so_giay_to"]:
+                QtWidgets.QMessageBox.warning(self, "Lỗi", "Vui lòng nhập số giấy tờ")
+                return
+            if not data["ho_ten"]:
+                QtWidgets.QMessageBox.warning(self, "Lỗi", "Vui lòng nhập họ và tên")
+                return
+
+            # Kiểm tra xem đang thêm mới hay cập nhật
+            if hasattr(self, 'is_editing') and self.is_editing and hasattr(self, 'record_id') and self.record_id:
+                # Cập nhật
+                success, message = self.db.cap_nhat_cong_dan(data, self.record_id)
+                if success:
+                    self.front_image_temp = None
+                    self.back_image_temp = None
+                    self.clear_all_fields()
+                    self.show_success_message("✅ Đã cập nhật thông tin công dân")
+                    self.is_editing = False
+                    self.record_id = None
+                else:
+                    QtWidgets.QMessageBox.critical(self, "Lỗi", f"Không thể cập nhật thông tin: {message}")
             else:
-                QtWidgets.QMessageBox.critical(self, "Lỗi", "Không thể lưu thông tin vào cơ sở dữ liệu")
+                # Thêm mới
+                success, message = self.db.them_cong_dan(data)
+                if success:
+                    self.front_image_temp = None
+                    self.back_image_temp = None
+                    self.clear_all_fields()
+                    self.show_success_message("✅ Đã lưu thông tin công dân vào cơ sở dữ liệu")
+                else:
+                    QtWidgets.QMessageBox.critical(self, "Lỗi", f"Không thể lưu thông tin: {message}")
 
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Lỗi", f"Lỗi khi lưu dữ liệu: {e}")
@@ -1307,6 +1317,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.front_image_temp = None
         self.back_image_temp = None
         self.clear_status()
+        
+        # Reset trạng thái sửa
+        self.is_editing = False
+        self.record_id = None
 
     def show_success_message(self, message: str):
         self.status_label.setText(message)
@@ -1424,7 +1438,62 @@ class MainWindow(QtWidgets.QMainWindow):
                         )
                         self.back_img_label.setPixmap(scaled_pixmap)
             
+            # Nếu người dùng chọn "Sử dụng thông tin", không lưu thông tin cũ để tránh sửa nhầm
+            if not hasattr(self, 'is_editing') or not self.is_editing:
+                self.old_so_giay_to = None
+                self.old_thoi_gian_ghi = None
+                self.is_editing = False
+            
             self.show_success_message("✅ Đã điền thông tin từ dữ liệu có sẵn")
+
+    def fill_form_from_data(self, data: dict):
+        """Điền thông tin từ data vào form"""
+        try:
+            # Điền các trường text
+            self.fields["Số giấy tờ"].setText(data["so_giay_to"])
+            self.fields["Số CMND cũ (nếu có)"].setText(data["so_cmnd_cu"])
+            self.fields["Họ và tên"].setText(data["ho_ten"])
+            self.fields["Nơi thường trú"].setText(data["noi_thuong_tru"])
+            self.fields["Loại giấy tờ"].setText(data["loai_giay_to"])
+            
+            # Xử lý giới tính
+            if data["gioi_tinh"] == "Nam":
+                self.rb_nam.setChecked(True)
+            elif data["gioi_tinh"] == "Nữ":
+                self.rb_nu.setChecked(True)
+            else:
+                self.rb_nam.setChecked(False)
+                self.rb_nu.setChecked(False)
+            
+            # Xử lý ngày sinh
+            try:
+                d_ns = datetime.strptime(data["ngay_sinh"], "%d/%m/%Y")
+                self.fields["Ngày sinh"].setDate(QtCore.QDate(d_ns.year, d_ns.month, d_ns.day))
+            except:
+                self.fields["Ngày sinh"].setDate(QtCore.QDate.currentDate())
+            
+            # Xử lý ngày cấp
+            try:
+                d_cap = datetime.strptime(data["ngay_cap"], "%d/%m/%Y")
+                self.fields["Ngày cấp giấy tờ"].setDate(QtCore.QDate(d_cap.year, d_cap.month, d_cap.day))
+            except:
+                self.fields["Ngày cấp giấy tờ"].setDate(QtCore.QDate.currentDate())
+            
+            # Xử lý tên phòng
+            index = self.fields["Tên phòng lưu trú"].findText(data["ten_phong"])
+            if index >= 0:
+                self.fields["Tên phòng lưu trú"].setCurrentIndex(index)
+            
+            # Lưu ID để cập nhật
+            if "id" in data:
+                self.record_id = data["id"]
+                self.is_editing = True
+            else:
+                self.record_id = None
+                self.is_editing = False
+            
+        except Exception as e:
+            print(f"Lỗi khi điền form: {e}")
 
 def normalize_date(date_str):
     """Chuẩn hóa chuỗi ngày tháng về định dạng dd/mm/yyyy"""
@@ -1529,39 +1598,19 @@ class SearchDialog(QtWidgets.QDialog):
         date_filter_layout = QtWidgets.QHBoxLayout(date_filter_widget)
         date_filter_layout.setContentsMargins(0, 0, 0, 0)
         
+        # Thiết lập ngày mặc định là năm hiện tại
+        current_year = datetime.now().year
         self.from_date = FloatingCalendarDateEdit()
-        self.from_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
+        self.from_date.setDate(QtCore.QDate(current_year, 1, 1))  # Ngày đầu năm hiện tại
         self.to_date = FloatingCalendarDateEdit()
-        self.to_date.setDate(QtCore.QDate.currentDate())
+        self.to_date.setDate(QtCore.QDate(current_year, 12, 31))  # Ngày cuối năm hiện tại
         
         date_filter_layout.addWidget(QtWidgets.QLabel("Từ ngày:"))
         date_filter_layout.addWidget(self.from_date)
         date_filter_layout.addWidget(QtWidgets.QLabel("Đến ngày:"))
         date_filter_layout.addWidget(self.to_date)
-        
-        # Nút xuất Excel
-        self.btn_export = QtWidgets.QPushButton("Xuất Excel")
-        self.btn_export.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                padding: 8px 15px;
-                border-radius: 5px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
-        self.btn_export.clicked.connect(self.export_to_excel)
 
-        # Thêm loading spinner
-        self.loading_label = QtWidgets.QLabel()
-        self.loading_movie = QtGui.QMovie("loading.gif")
-        self.loading_label.setMovie(self.loading_movie)
-        self.loading_label.setFixedSize(24, 24)
-        self.loading_label.hide()
-        
+        # Nút tìm kiếm
         self.search_btn = QtWidgets.QPushButton("Tìm kiếm")
         self.search_btn.setStyleSheet("""
             QPushButton {
@@ -1578,6 +1627,43 @@ class SearchDialog(QtWidgets.QDialog):
                 background-color: #CCCCCC;
             }
         """)
+        
+        # Nút xuất Excel
+        self.btn_export = QtWidgets.QPushButton("Xuất Excel")
+        self.btn_export.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 8px 15px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+
+        # Nút xóa tất cả
+        self.btn_delete_all = QtWidgets.QPushButton("Xóa tất cả")
+        self.btn_delete_all.setStyleSheet("""
+            QPushButton {
+                background-color: #FF2222;
+                color: white;
+                padding: 8px 15px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #FF5555;
+            }
+        """)
+
+        # Thêm loading spinner
+        self.loading_label = QtWidgets.QLabel()
+        self.loading_movie = QtGui.QMovie("loading.gif")
+        self.loading_label.setMovie(self.loading_movie)
+        self.loading_label.setFixedSize(24, 24)
+        self.loading_label.hide()
 
         # Thêm các widget vào layout
         search_layout.addWidget(self.search_input)
@@ -1587,12 +1673,13 @@ class SearchDialog(QtWidgets.QDialog):
         filter_layout.addWidget(search_widget)
         filter_layout.addWidget(date_filter_widget)
         filter_layout.addWidget(self.btn_export)
+        filter_layout.addWidget(self.btn_delete_all)
         
         layout.addWidget(filter_widget)
 
         # Bảng kết quả
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(13)  # Thêm cột thời gian ghi
+        self.table.setColumnCount(13)
         self.table.setHorizontalHeaderLabels([
             "STT", "Số giấy tờ", "Số CMND cũ", "Họ và tên", "Giới tính", 
             "Ngày sinh", "Nơi thường trú", "Ngày cấp", "Loại giấy tờ", "Tên phòng",
@@ -1633,7 +1720,7 @@ class SearchDialog(QtWidgets.QDialog):
         # Thiết lập chiều cao dòng
         self.table.verticalHeader().setDefaultSectionSize(150)
         self.table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
-        self.table.verticalHeader().hide()  # Ẩn header dọc vì đã có cột STT
+        self.table.verticalHeader().hide()
         
         # Cho phép cuộn mượt
         self.table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
@@ -1645,6 +1732,39 @@ class SearchDialog(QtWidgets.QDialog):
         # Nút điều khiển
         btn_widget = QtWidgets.QWidget()
         btn_layout = QtWidgets.QHBoxLayout(btn_widget)
+        
+        # Nút sửa
+        self.btn_edit = QtWidgets.QPushButton("Sửa")
+        self.btn_edit.setStyleSheet("""
+            QPushButton {
+                background-color: #FFA500;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #FF8C00;
+            }
+        """)
+        self.btn_edit.setEnabled(False)
+        
+        # Nút xóa
+        self.btn_delete = QtWidgets.QPushButton("Xóa")
+        self.btn_delete.setStyleSheet("""
+            QPushButton {
+                background-color: #FF2222;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #FF5555;
+            }
+        """)
+        self.btn_delete.setEnabled(False)
+        
         self.btn_use = QtWidgets.QPushButton("Sử dụng thông tin")
         self.btn_use.setStyleSheet("""
             QPushButton {
@@ -1658,30 +1778,37 @@ class SearchDialog(QtWidgets.QDialog):
                 background-color: #45a049;
             }
         """)
+        self.btn_use.setEnabled(False)
+        
         self.btn_cancel = QtWidgets.QPushButton("Đóng")
         self.btn_cancel.setStyleSheet("""
             QPushButton {
-                background-color: #FF2222;
+                background-color: #808080;
                 color: white;
                 padding: 8px 20px;
                 border-radius: 5px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #FF5555;
+                background-color: #696969;
             }
         """)
+
+        btn_layout.addWidget(self.btn_edit)
+        btn_layout.addWidget(self.btn_delete)
         btn_layout.addWidget(self.btn_use)
         btn_layout.addWidget(self.btn_cancel)
         layout.addWidget(btn_widget)
         
-        # Khởi tạo các biến và kết nối signals
-        self.search_worker = None
+        # Kết nối signals
         self.search_btn.clicked.connect(self.start_search)
         self.search_input.returnPressed.connect(self.start_search)
         self.btn_use.clicked.connect(self.accept)
         self.btn_cancel.clicked.connect(self.reject)
-        self.btn_use.setEnabled(False)
+        self.btn_export.clicked.connect(self.export_to_excel)
+        self.btn_delete_all.clicked.connect(self.delete_all_records)
+        self.btn_edit.clicked.connect(self.edit_selected_record)
+        self.btn_delete.clicked.connect(self.delete_selected_record)
         self.table.itemSelectionChanged.connect(self.on_selection_changed)
         
         # Timer cho debounce tìm kiếm
@@ -1692,9 +1819,131 @@ class SearchDialog(QtWidgets.QDialog):
         # Hiển thị tất cả công dân khi mở dialog
         QtCore.QTimer.singleShot(100, self.display_all_citizens)
 
+        # Widget sắp xếp
+        sort_widget = QtWidgets.QWidget()
+        sort_layout = QtWidgets.QHBoxLayout(sort_widget)
+        sort_layout.setContentsMargins(0, 0, 0, 0)
+        
+        sort_label = QtWidgets.QLabel("Sắp xếp:")
+        self.sort_combo = QtWidgets.QComboBox()
+        self.sort_combo.addItems(["Mới nhất trước", "Cũ nhất trước"])
+        self.sort_combo.setStyleSheet("""
+            QComboBox {
+                padding: 5px;
+                border: 1px solid #B0C4DE;
+                border-radius: 5px;
+                min-width: 150px;
+            }
+        """)
+        sort_layout.addWidget(sort_label)
+        sort_layout.addWidget(self.sort_combo)
+        
+        filter_layout.addWidget(sort_widget)
+
+        # Kết nối sự kiện thay đổi của combobox sắp xếp
+        self.sort_combo.currentIndexChanged.connect(self.on_sort_changed)
+
+    def delete_all_records(self):
+        """Xóa tất cả bản ghi"""
+        reply = QtWidgets.QMessageBox.question(
+            self, 'Xác nhận xóa',
+            'Bạn có chắc chắn muốn xóa tất cả thông tin công dân?',
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+        
+        if reply == QtWidgets.QMessageBox.Yes:
+            success, message = self.parent.db.xoa_tat_ca_cong_dan()
+            if success:
+                self.display_all_citizens()
+                QtWidgets.QMessageBox.information(self, "Thành công", "Đã xóa tất cả thông tin công dân")
+            else:
+                QtWidgets.QMessageBox.critical(self, "Lỗi", f"Không thể xóa: {message}")
+
+    def delete_selected_record(self):
+        """Xóa bản ghi được chọn"""
+        current_row = self.table.currentRow()
+        if current_row < 0:
+            return
+            
+        so_giay_to = self.table.item(current_row, 1).text()
+        thoi_gian_ghi = self.table.item(current_row, 10).text()
+        
+        reply = QtWidgets.QMessageBox.question(
+            self, 'Xác nhận xóa',
+            f'Bạn có chắc chắn muốn xóa thông tin của công dân này?\nSố giấy tờ: {so_giay_to}',
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+        
+        if reply == QtWidgets.QMessageBox.Yes:
+            success, message = self.parent.db.xoa_cong_dan_theo_dong(so_giay_to, thoi_gian_ghi)
+            if success:
+                self.table.removeRow(current_row)
+                QtWidgets.QMessageBox.information(self, "Thành công", "Đã xóa thông tin công dân")
+            else:
+                QtWidgets.QMessageBox.critical(self, "Lỗi", f"Không thể xóa: {message}")
+
+    def edit_selected_record(self):
+        """Sửa bản ghi được chọn"""
+        current_row = self.table.currentRow()
+        if current_row < 0:
+            return
+            
+        # Lấy thông tin từ dòng được chọn
+        data = {
+            "id": self.table.item(current_row, 0).data(QtCore.Qt.UserRole),  # Lưu ID trong UserRole
+            "so_giay_to": self.table.item(current_row, 1).text(),
+            "so_cmnd_cu": self.table.item(current_row, 2).text(),
+            "ho_ten": self.table.item(current_row, 3).text(),
+            "gioi_tinh": self.table.item(current_row, 4).text(),
+            "ngay_sinh": self.table.item(current_row, 5).text(),
+            "noi_thuong_tru": self.table.item(current_row, 6).text(),
+            "ngay_cap": self.table.item(current_row, 7).text(),
+            "loai_giay_to": self.table.item(current_row, 8).text(),
+            "ten_phong": self.table.item(current_row, 9).text(),
+            "thoi_gian_ghi": self.table.item(current_row, 10).text()
+        }
+        
+        # Lưu ID để cập nhật
+        self.record_id = data["id"]
+        
+        # Điền thông tin vào form chính
+        if self.parent:
+            self.parent.fill_form_from_data(data)
+            self.accept()  # Đóng dialog tìm kiếm
+
+    def on_selection_changed(self):
+        """Xử lý khi chọn dòng trong bảng"""
+        has_selection = len(self.table.selectedItems()) > 0
+        self.btn_use.setEnabled(has_selection)
+        self.btn_edit.setEnabled(has_selection)
+        self.btn_delete.setEnabled(has_selection)
+        
+        if has_selection:
+            row = self.table.selectedItems()[0].row()
+            self.selected_data = {
+                "Số giấy tờ": self.table.item(row, 1).text(),
+                "Số CMND cũ (nếu có)": self.table.item(row, 2).text(),
+                "Họ và tên": self.table.item(row, 3).text(),
+                "Giới tính": self.table.item(row, 4).text(),
+                "Ngày sinh": self.table.item(row, 5).text(),
+                "Nơi thường trú": self.table.item(row, 6).text(),
+                "Ngày cấp giấy tờ": self.table.item(row, 7).text(),
+                "Loại giấy tờ": self.table.item(row, 8).text(),
+                "Tên phòng lưu trú": self.table.item(row, 9).text(),
+                "Thời gian ghi": self.table.item(row, 10).text(),
+                "Ảnh mặt trước": self.get_image_path(row, 11),
+                "Ảnh mặt sau": self.get_image_path(row, 12)
+            }
+        else:
+            self.selected_data = None
+
     def display_all_citizens(self):
         """Hiển thị tất cả công dân"""
         self.search_input.clear()
+        # Đặt lại combobox về giá trị mặc định (Mới nhất trước)
+        self.sort_combo.setCurrentIndex(0)
         self.start_search()
 
     def start_search(self):
@@ -1709,8 +1958,12 @@ class SearchDialog(QtWidgets.QDialog):
         from_date = self.from_date.date().toString("dd/MM/yyyy")
         to_date = self.to_date.date().toString("dd/MM/yyyy")
         
-        # Tìm kiếm trong database với bộ lọc ngày
-        results = self.parent.db.tim_kiem_theo_ten_va_ngay(search_text, from_date, to_date)
+        # Lấy thứ tự sắp xếp
+        sort_order = "DESC" if self.sort_combo.currentText() == "Mới nhất trước" else "ASC"
+        
+        # Tìm kiếm trong database với bộ lọc ngày và sắp xếp
+        results = self.parent.db.tim_kiem_theo_ten_va_ngay(
+            search_text, from_date, to_date, sort_order)
         
         # Hiển thị kết quả
         self.display_results(results)
@@ -1723,8 +1976,9 @@ class SearchDialog(QtWidgets.QDialog):
             current_row = self.table.rowCount()
             self.table.insertRow(current_row)
             
-            # Thêm STT
+            # Thêm STT và lưu ID vào UserRole
             stt_item = QtWidgets.QTableWidgetItem(str(idx))
+            stt_item.setData(QtCore.Qt.UserRole, row_data['id'])  # Lưu ID vào UserRole
             stt_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.table.setItem(current_row, 0, stt_item)
             
@@ -1779,9 +2033,11 @@ class SearchDialog(QtWidgets.QDialog):
     def export_to_excel(self):
         """Xuất dữ liệu hiện tại ra file Excel"""
         try:
-            # Tạo đường dẫn cho file Excel
+            # Tạo đường dẫn cho file Excel trong folder data
+            data_dir = os.path.join(self.parent.app_dir, "data")
+            os.makedirs(data_dir, exist_ok=True)
             current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-            excel_path = os.path.join(self.parent.app_dir, f"DS_Cong_Dan_{current_time}.xlsx")
+            excel_path = os.path.join(data_dir, f"DS_Cong_Dan_{current_time}.xlsx")
             
             # Lấy dữ liệu hiện tại (đã được lọc)
             search_text = self.search_input.text().strip()
@@ -1789,8 +2045,11 @@ class SearchDialog(QtWidgets.QDialog):
             to_date = self.to_date.date().toString("dd/MM/yyyy")
             results = self.parent.db.tim_kiem_theo_ten_va_ngay(search_text, from_date, to_date)
             
+            # Lấy thứ tự sắp xếp
+            sort_order = "DESC" if self.sort_combo.currentText() == "Mới nhất trước" else "ASC"
+            
             # Xuất ra Excel
-            if self.parent.db.xuat_excel_tu_ket_qua(excel_path, results):
+            if self.parent.db.xuat_excel_tu_ket_qua(excel_path, results, sort_order):
                 QtWidgets.QMessageBox.information(self, "Thành công", 
                     f"Đã xuất dữ liệu ra file Excel:\n{excel_path}")
                 os.startfile(excel_path)
@@ -1798,30 +2057,6 @@ class SearchDialog(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "Lỗi", "Không thể xuất dữ liệu ra Excel.")
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Lỗi", f"Lỗi khi xuất Excel: {e}")
-
-    def on_selection_changed(self):
-        selected_rows = self.table.selectedItems()
-        if selected_rows:
-            self.btn_use.setEnabled(True)
-            row = selected_rows[0].row()
-            
-            self.selected_data = {
-                "Số giấy tờ": self.table.item(row, 1).text(),
-                "Số CMND cũ (nếu có)": self.table.item(row, 2).text(),
-                "Họ và tên": self.table.item(row, 3).text(),
-                "Giới tính": self.table.item(row, 4).text(),
-                "Ngày sinh": self.table.item(row, 5).text(),
-                "Nơi thường trú": self.table.item(row, 6).text(),
-                "Ngày cấp giấy tờ": self.table.item(row, 7).text(),
-                "Loại giấy tờ": self.table.item(row, 8).text(),
-                "Tên phòng lưu trú": self.table.item(row, 9).text(),
-                "Thời gian ghi": self.table.item(row, 10).text(),
-                "Ảnh mặt trước": self.get_image_path(row, 11),
-                "Ảnh mặt sau": self.get_image_path(row, 12)
-            }
-        else:
-            self.btn_use.setEnabled(False)
-            self.selected_data = None
 
     def get_image_path(self, row, col):
         """Lấy đường dẫn ảnh từ cell widget"""
@@ -1864,6 +2099,10 @@ class SearchDialog(QtWidgets.QDialog):
             label.setStyleSheet("background-color: #F0F0F0; border: 1px solid #CCCCCC;")
             
         return label
+
+    def on_sort_changed(self):
+        """Xử lý khi thay đổi cách sắp xếp"""
+        self.start_search()
 
 if __name__ == "__main__":
     try:

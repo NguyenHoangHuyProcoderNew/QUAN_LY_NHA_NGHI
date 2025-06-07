@@ -5,23 +5,23 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 import sys
 import pandas as pd
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 class Database:
     def __init__(self, app_dir: str):
-        # Tạo cấu trúc thư mục
+        """Khởi tạo kết nối database"""
         self.app_dir = app_dir
         self.data_dir = os.path.join(app_dir, "data")
         self.images_dir = os.path.join(self.data_dir, "images")
-        self.db_path = os.path.join(self.data_dir, "cong_dan.db")
+        self.db_path = os.path.join(self.data_dir, "database.db")
         
-        # Đảm bảo các thư mục tồn tại
-        os.makedirs(self.data_dir, exist_ok=True)
-        os.makedirs(self.images_dir, exist_ok=True)
+        # Tạo thư mục data nếu chưa tồn tại
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         
-        self._create_tables()
+        # Tạo kết nối và bảng nếu chưa tồn tại
+        self.create_tables()
     
     def _get_base_dir(self) -> str:
         """Lấy thư mục gốc của ứng dụng"""
@@ -32,202 +32,438 @@ class Database:
             # Nếu đang chạy từ source code
             return self.app_dir
 
-    def _create_tables(self):
-        """Tạo các bảng nếu chưa tồn tại"""
-        with sqlite3.connect(self.db_path) as conn:
+    def create_tables(self):
+        """Tạo các bảng trong database nếu chưa tồn tại"""
+        try:
+            conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Bảng thông tin công dân
-            cursor.execute('''
+            # Tạo bảng công dân - thêm id tự tăng làm khóa chính
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS cong_dan (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    so_giay_to TEXT NOT NULL,
+                    so_cmnd_cu TEXT,
                     ho_ten TEXT NOT NULL,
-                    ngay_sinh TEXT,
                     gioi_tinh TEXT,
-                    quoc_tich TEXT,
-                    cmnd TEXT,
-                    ho_chieu TEXT,
-                    thuong_tru TEXT,
-                    tam_tru TEXT,
-                    nghe_nghiep TEXT,
-                    email TEXT,
-                    sdt TEXT,
+                    ngay_sinh TEXT,
+                    noi_thuong_tru TEXT,
+                    ngay_cap TEXT,
+                    loai_giay_to TEXT,
+                    ten_phong TEXT,
+                    thoi_gian_ghi TEXT NOT NULL,
                     anh_mat_truoc TEXT,
-                    anh_mat_sau TEXT,
-                    ngay_den TEXT,
-                    ngay_di TEXT,
-                    phong TEXT,
-                    ghi_chu TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    anh_mat_sau TEXT
                 )
-            ''')
+            """)
+            
             conn.commit()
+        except Exception as e:
+            print(f"Lỗi khi tạo bảng: {e}")
+        finally:
+            if conn:
+                conn.close()
 
-    def them_cong_dan(self, data: Dict[str, Any]) -> int:
-        """Thêm thông tin công dân mới"""
-        with sqlite3.connect(self.db_path) as conn:
+    def them_cong_dan(self, data: Dict[str, Any]) -> bool:
+        """Thêm thông tin công dân mới vào database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Chuẩn bị câu lệnh SQL
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?' for _ in data])
-            sql = f'INSERT INTO cong_dan ({columns}) VALUES ({placeholders})'
+            # Kiểm tra dữ liệu bắt buộc
+            if not data["so_giay_to"] or not data["ho_ten"]:
+                return False, "Số giấy tờ và họ tên là bắt buộc"
             
-            # Thực thi câu lệnh
-            cursor.execute(sql, list(data.values()))
+            # Thêm dữ liệu vào bảng
+            cursor.execute("""
+                INSERT INTO cong_dan (
+                    so_giay_to, so_cmnd_cu, ho_ten, gioi_tinh,
+                    ngay_sinh, noi_thuong_tru, ngay_cap, loai_giay_to,
+                    ten_phong, thoi_gian_ghi, anh_mat_truoc, anh_mat_sau
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                data["so_giay_to"], data["so_cmnd_cu"], data["ho_ten"],
+                data["gioi_tinh"], data["ngay_sinh"], data["noi_thuong_tru"],
+                data["ngay_cap"], data["loai_giay_to"], data["ten_phong"],
+                data["thoi_gian_ghi"], data["anh_mat_truoc"], data["anh_mat_sau"]
+            ))
+            
             conn.commit()
+            return True, "Thêm thành công"
             
-            return cursor.lastrowid
+        except Exception as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
 
-    def cap_nhat_cong_dan(self, id: int, data: Dict[str, Any]) -> bool:
+    def cap_nhat_cong_dan(self, data, record_id):
         """Cập nhật thông tin công dân"""
-        with sqlite3.connect(self.db_path) as conn:
+        try:
+            conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Chuẩn bị câu lệnh SQL
-            set_clause = ', '.join([f'{k} = ?' for k in data.keys()])
-            sql = f'UPDATE cong_dan SET {set_clause} WHERE id = ?'
+            # Kiểm tra dữ liệu bắt buộc
+            if not data["so_giay_to"] or not data["ho_ten"]:
+                return False, "Số giấy tờ và họ tên là bắt buộc"
             
-            # Thực thi câu lệnh
-            values = list(data.values()) + [id]
-            cursor.execute(sql, values)
+            # Cập nhật thông tin
+            cursor.execute("""
+                UPDATE cong_dan SET
+                    so_giay_to = ?,
+                    so_cmnd_cu = ?,
+                    ho_ten = ?,
+                    gioi_tinh = ?,
+                    ngay_sinh = ?,
+                    noi_thuong_tru = ?,
+                    ngay_cap = ?,
+                    loai_giay_to = ?,
+                    ten_phong = ?,
+                    anh_mat_truoc = ?,
+                    anh_mat_sau = ?
+                WHERE id = ?
+            """, (
+                data["so_giay_to"], data["so_cmnd_cu"], data["ho_ten"],
+                data["gioi_tinh"], data["ngay_sinh"], data["noi_thuong_tru"],
+                data["ngay_cap"], data["loai_giay_to"], data["ten_phong"],
+                data["anh_mat_truoc"], data["anh_mat_sau"],
+                record_id
+            ))
+            
+            if cursor.rowcount == 0:
+                return False, "Không tìm thấy thông tin để cập nhật"
+            
             conn.commit()
+            return True, "Cập nhật thành công"
             
-            return cursor.rowcount > 0
+        except Exception as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
 
-    def xoa_cong_dan(self, id: int) -> bool:
-        """Xóa thông tin công dân"""
-        with sqlite3.connect(self.db_path) as conn:
+    def xoa_cong_dan_theo_dong(self, so_giay_to: str, thoi_gian_ghi: str) -> bool:
+        """Xóa thông tin một công dân"""
+        try:
+            conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
             # Lấy thông tin ảnh trước khi xóa
-            cursor.execute('SELECT anh_mat_truoc, anh_mat_sau FROM cong_dan WHERE id = ?', (id,))
+            cursor.execute("""
+                SELECT anh_mat_truoc, anh_mat_sau
+                FROM cong_dan
+                WHERE so_giay_to = ? AND thoi_gian_ghi = ?
+            """, (so_giay_to, thoi_gian_ghi))
             result = cursor.fetchone()
+            
             if result:
-                anh_mat_truoc, anh_mat_sau = result
-                
+                front_img, back_img = result
                 # Xóa file ảnh nếu tồn tại
-                if anh_mat_truoc:
-                    try:
-                        os.remove(os.path.join(self.images_dir, os.path.basename(anh_mat_truoc)))
-                    except:
-                        pass
-                if anh_mat_sau:
-                    try:
-                        os.remove(os.path.join(self.images_dir, os.path.basename(anh_mat_sau)))
-                    except:
-                        pass
+                for img_path in [front_img, back_img]:
+                    if img_path:
+                        full_path = os.path.join(self.app_dir, img_path)
+                        if os.path.exists(full_path):
+                            os.remove(full_path)
             
-            # Xóa record trong database
-            cursor.execute('DELETE FROM cong_dan WHERE id = ?', (id,))
+            # Xóa bản ghi
+            cursor.execute("""
+                DELETE FROM cong_dan
+                WHERE so_giay_to = ? AND thoi_gian_ghi = ?
+            """, (so_giay_to, thoi_gian_ghi))
+            
+            if cursor.rowcount == 0:
+                return False, "Không tìm thấy thông tin để xóa"
+            
             conn.commit()
+            return True, "Xóa thành công"
             
-            return cursor.rowcount > 0
+        except Exception as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
 
-    def lay_cong_dan(self, id: int) -> Optional[Dict[str, Any]]:
-        """Lấy thông tin công dân theo ID"""
-        with sqlite3.connect(self.db_path) as conn:
+    def xoa_tat_ca_cong_dan(self) -> bool:
+        """Xóa tất cả thông tin công dân"""
+        try:
+            conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            cursor.execute('SELECT * FROM cong_dan WHERE id = ?', (id,))
-            columns = [col[0] for col in cursor.description]
-            result = cursor.fetchone()
-            
-            if result:
-                return dict(zip(columns, result))
-            return None
-
-    def lay_danh_sach_cong_dan(self) -> List[Dict[str, Any]]:
-        """Lấy danh sách tất cả công dân"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            cursor.execute('SELECT * FROM cong_dan ORDER BY id')
-            columns = [col[0] for col in cursor.description]
+            # Lấy tất cả đường dẫn ảnh
+            cursor.execute("SELECT anh_mat_truoc, anh_mat_sau FROM cong_dan")
             results = cursor.fetchall()
             
-            return [dict(zip(columns, row)) for row in results]
+            # Xóa tất cả file ảnh
+            for front_img, back_img in results:
+                for img_path in [front_img, back_img]:
+                    if img_path:
+                        full_path = os.path.join(self.app_dir, img_path)
+                        if os.path.exists(full_path):
+                            os.remove(full_path)
+            
+            # Xóa tất cả bản ghi
+            cursor.execute("DELETE FROM cong_dan")
+            conn.commit()
+            
+            return True, "Đã xóa tất cả thông tin"
+            
+        except Exception as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
 
-    def xuat_excel(self) -> str:
-        """Xuất danh sách công dân ra file Excel"""
-        # Lấy danh sách công dân
-        data = self.lay_danh_sach_cong_dan()
-        
-        # Tạo DataFrame
-        df = pd.DataFrame(data)
-        
-        # Tạo workbook mới
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Danh sách công dân"
-        
-        # Định dạng header
-        headers = [
-            'ID', 'Họ tên', 'Ngày sinh', 'Giới tính', 'Quốc tịch', 'CMND/CCCD', 'Hộ chiếu',
-            'Thường trú', 'Tạm trú', 'Nghề nghiệp', 'Email', 'Số điện thoại',
-            'Ảnh mặt trước', 'Ảnh mặt sau', 'Ngày đến', 'Ngày đi', 'Phòng', 'Ghi chú', 'Ngày tạo'
-        ]
-        
-        # Thêm header
-        for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col)
-            cell.value = header
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill(start_color='CCCCCC', end_color='CCCCCC', fill_type='solid')
-            cell.alignment = Alignment(horizontal='center', vertical='center')
-        
-        # Thêm dữ liệu
-        for row_idx, item in enumerate(data, 2):
-            # ID
-            ws.cell(row=row_idx, column=1, value=item['id'])
+    def tim_kiem_theo_ten_va_ngay(self, search_text="", from_date=None, to_date=None, sort_order="DESC"):
+        """Tìm kiếm công dân theo tên và khoảng thời gian"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
             
-            # Các trường thông tin cơ bản
-            ws.cell(row=row_idx, column=2, value=item['ho_ten'])
-            ws.cell(row=row_idx, column=3, value=item['ngay_sinh'])
-            ws.cell(row=row_idx, column=4, value=item['gioi_tinh'])
-            ws.cell(row=row_idx, column=5, value=item['quoc_tich'])
-            ws.cell(row=row_idx, column=6, value=item['cmnd'])
-            ws.cell(row=row_idx, column=7, value=item['ho_chieu'])
-            ws.cell(row=row_idx, column=8, value=item['thuong_tru'])
-            ws.cell(row=row_idx, column=9, value=item['tam_tru'])
-            ws.cell(row=row_idx, column=10, value=item['nghe_nghiep'])
-            ws.cell(row=row_idx, column=11, value=item['email'])
-            ws.cell(row=row_idx, column=12, value=item['sdt'])
+            # Chuẩn bị câu truy vấn
+            query = "SELECT * FROM cong_dan WHERE 1=1"
+            params = []
             
-            # Xử lý đường dẫn ảnh
-            base_dir = self._get_base_dir()
+            # Thêm điều kiện tìm kiếm theo tên
+            if search_text:
+                query += " AND ho_ten LIKE ?"
+                params.append(f"%{search_text}%")
             
-            # Ảnh mặt trước
-            if item['anh_mat_truoc']:
-                image_path = os.path.abspath(os.path.join(base_dir, item['anh_mat_truoc']))
-                url_path = f"file:///{image_path.replace(os.sep, '/')}"
-                ws.cell(row=row_idx, column=13, value=f'=HYPERLINK("{url_path}","Xem ảnh")')
+            # Thêm điều kiện ngày chỉ khi có cả from_date và to_date
+            if from_date and to_date:
+                query += " AND thoi_gian_ghi >= ? AND thoi_gian_ghi <= ?"
+                params.extend([from_date, to_date])
             
-            # Ảnh mặt sau
-            if item['anh_mat_sau']:
-                image_path = os.path.abspath(os.path.join(base_dir, item['anh_mat_sau']))
-                url_path = f"file:///{image_path.replace(os.sep, '/')}"
-                ws.cell(row=row_idx, column=14, value=f'=HYPERLINK("{url_path}","Xem ảnh")')
+            # Sắp xếp theo thời gian ghi
+            order_by = "DESC" if sort_order.upper() == "DESC" else "ASC"
+            query += f" ORDER BY thoi_gian_ghi {order_by}"
             
-            # Các trường thông tin khác
-            ws.cell(row=row_idx, column=15, value=item['ngay_den'])
-            ws.cell(row=row_idx, column=16, value=item['ngay_di'])
-            ws.cell(row=row_idx, column=17, value=item['phong'])
-            ws.cell(row=row_idx, column=18, value=item['ghi_chu'])
-            ws.cell(row=row_idx, column=19, value=item['created_at'])
-        
-        # Căn chỉnh độ rộng cột
-        for col in range(1, len(headers) + 1):
-            ws.column_dimensions[get_column_letter(col)].width = 15
-        
-        # Tạo tên file với timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        excel_path = os.path.join(self.data_dir, f"DS_Cong_Dan_{timestamp}.xlsx")
-        
-        # Lưu file
-        wb.save(excel_path)
-        
-        return excel_path
+            print(f"Query: {query}")
+            print(f"Params: {params}")
+            
+            # Thực thi truy vấn
+            cursor.execute(query, params)
+            results = cursor.fetchall()
+            
+            # Chuyển kết quả thành list of dict
+            columns = [desc[0] for desc in cursor.description]
+            data = []
+            for row in results:
+                data.append(dict(zip(columns, row)))
+            
+            print(f"Found {len(data)} records")
+            return data
+            
+        except Exception as e:
+            print(f"Lỗi khi tìm kiếm: {e}")
+            return []
+        finally:
+            if conn:
+                conn.close()
+
+    def xuat_excel(self, excel_path, sort_order="DESC"):
+        """Xuất tất cả dữ liệu ra file Excel"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            
+            # Đọc dữ liệu từ database với thứ tự sắp xếp
+            order_by = "DESC" if sort_order.upper() == "DESC" else "ASC"
+            query = f"SELECT * FROM cong_dan ORDER BY thoi_gian_ghi {order_by}"
+            df = pd.read_sql_query(query, conn)
+            
+            # Đổi tên cột
+            column_names = {
+                'id': 'ID',
+                'so_giay_to': 'Số giấy tờ',
+                'so_cmnd_cu': 'Số CMND cũ',
+                'ho_ten': 'Họ và tên',
+                'gioi_tinh': 'Giới tính',
+                'ngay_sinh': 'Ngày sinh',
+                'noi_thuong_tru': 'Nơi thường trú',
+                'ngay_cap': 'Ngày cấp',
+                'loai_giay_to': 'Loại giấy tờ',
+                'ten_phong': 'Tên phòng',
+                'thoi_gian_ghi': 'Thời gian ghi',
+                'anh_mat_truoc': 'Ảnh mặt trước',
+                'anh_mat_sau': 'Ảnh mặt sau'
+            }
+            df = df.rename(columns=column_names)
+            
+            # Tạo workbook mới
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            
+            # Thiết lập font mặc định cho toàn bộ sheet
+            ws.font = Font(name='Times New Roman', size=11)
+            
+            # Ghi header
+            for col, header in enumerate(df.columns, 1):
+                cell = ws.cell(row=1, column=col)
+                cell.value = header
+                cell.font = Font(name='Times New Roman', size=12, bold=True)
+                cell.fill = PatternFill(start_color='FFC000', end_color='FFC000', fill_type='solid')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            
+            # Ghi dữ liệu
+            for row_idx, row in enumerate(df.values, 2):
+                for col_idx, value in enumerate(row, 1):
+                    cell = ws.cell(row=row_idx, column=col_idx)
+                    # Xử lý đặc biệt cho cột ảnh
+                    if col_idx in [12, 13]:  # Cột ảnh mặt trước và sau
+                        if value and str(value).strip():
+                            # Tạo đường dẫn tuyệt đối từ thư mục Excel đến file ảnh
+                            img_path = os.path.abspath(os.path.join(self.app_dir, value))
+                            cell.value = f'=HYPERLINK("{img_path}", "Xem ảnh")'
+                            cell.font = Font(name='Times New Roman', size=11, color="0000FF", underline="single")
+                        else:
+                            cell.value = "Không có ảnh"
+                            cell.font = Font(name='Times New Roman', size=11)
+                    else:
+                        cell.value = value
+                        cell.font = Font(name='Times New Roman', size=11)
+                    cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            
+            # Tạo border style
+            border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            
+            # Áp dụng border cho tất cả các ô có dữ liệu
+            for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+                for cell in row:
+                    cell.border = border
+            
+            # Tự động điều chỉnh độ rộng cột dựa trên nội dung
+            for column in ws.columns:
+                max_length = 0
+                column = list(column)
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = (max_length + 2) * 1.2  # Thêm hệ số 1.2 để có thêm khoảng trống
+                ws.column_dimensions[column[0].column_letter].width = adjusted_width
+            
+            # Thiết lập chiều cao tối thiểu cho các dòng
+            for row in range(1, ws.max_row + 1):
+                ws.row_dimensions[row].height = 25
+            
+            # Lưu file
+            wb.save(excel_path)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Lỗi khi xuất Excel: {e}")
+            return False
+        finally:
+            if conn:
+                conn.close()
+
+    def xuat_excel_tu_ket_qua(self, excel_path, data, sort_order="DESC"):
+        """Xuất kết quả tìm kiếm ra file Excel"""
+        try:
+            # Tạo DataFrame từ dữ liệu
+            df = pd.DataFrame(data)
+            
+            # Sắp xếp dữ liệu theo thời gian ghi
+            df = df.sort_values(by='thoi_gian_ghi', 
+                              ascending=False if sort_order.upper() == "DESC" else True)
+            
+            # Đổi tên cột
+            column_names = {
+                'id': 'ID',
+                'so_giay_to': 'Số giấy tờ',
+                'so_cmnd_cu': 'Số CMND cũ',
+                'ho_ten': 'Họ và tên',
+                'gioi_tinh': 'Giới tính',
+                'ngay_sinh': 'Ngày sinh',
+                'noi_thuong_tru': 'Nơi thường trú',
+                'ngay_cap': 'Ngày cấp',
+                'loai_giay_to': 'Loại giấy tờ',
+                'ten_phong': 'Tên phòng',
+                'thoi_gian_ghi': 'Thời gian ghi',
+                'anh_mat_truoc': 'Ảnh mặt trước',
+                'anh_mat_sau': 'Ảnh mặt sau'
+            }
+            df = df.rename(columns=column_names)
+            
+            # Tạo workbook mới
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            
+            # Thiết lập font mặc định cho toàn bộ sheet
+            ws.font = Font(name='Times New Roman', size=11)
+            
+            # Ghi header
+            for col, header in enumerate(df.columns, 1):
+                cell = ws.cell(row=1, column=col)
+                cell.value = header
+                cell.font = Font(name='Times New Roman', size=12, bold=True)
+                cell.fill = PatternFill(start_color='FFC000', end_color='FFC000', fill_type='solid')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            
+            # Ghi dữ liệu
+            for row_idx, row in enumerate(df.values, 2):
+                for col_idx, value in enumerate(row, 1):
+                    cell = ws.cell(row=row_idx, column=col_idx)
+                    # Xử lý đặc biệt cho cột ảnh
+                    if col_idx in [12, 13]:  # Cột ảnh mặt trước và sau
+                        if value and str(value).strip():
+                            # Tạo đường dẫn tuyệt đối từ thư mục Excel đến file ảnh
+                            img_path = os.path.abspath(os.path.join(self.app_dir, value))
+                            cell.value = f'=HYPERLINK("{img_path}", "Xem ảnh")'
+                            cell.font = Font(name='Times New Roman', size=11, color="0000FF", underline="single")
+                        else:
+                            cell.value = "Không có ảnh"
+                            cell.font = Font(name='Times New Roman', size=11)
+                    else:
+                        cell.value = value
+                        cell.font = Font(name='Times New Roman', size=11)
+                    cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            
+            # Tạo border style
+            border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            
+            # Áp dụng border cho tất cả các ô có dữ liệu
+            for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+                for cell in row:
+                    cell.border = border
+            
+            # Tự động điều chỉnh độ rộng cột dựa trên nội dung
+            for column in ws.columns:
+                max_length = 0
+                column = list(column)
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = (max_length + 2) * 1.2  # Thêm hệ số 1.2 để có thêm khoảng trống
+                ws.column_dimensions[column[0].column_letter].width = adjusted_width
+            
+            # Thiết lập chiều cao tối thiểu cho các dòng
+            for row in range(1, ws.max_row + 1):
+                ws.row_dimensions[row].height = 25
+            
+            # Lưu file
+            wb.save(excel_path)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Lỗi khi xuất Excel: {e}")
+            return False
 
     def luu_anh(self, source_path: str, prefix: str = "") -> str:
         """Lưu ảnh vào thư mục images"""
