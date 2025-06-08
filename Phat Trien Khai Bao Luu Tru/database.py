@@ -4,10 +4,13 @@ import shutil
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import sys
-import pandas as pd
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
+try:
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
 
 class Database:
     def __init__(self, app_dir: str):
@@ -262,49 +265,46 @@ class Database:
 
     def xuat_excel(self, excel_path, sort_order="DESC"):
         """Xuất tất cả dữ liệu ra file Excel"""
+        if not OPENPYXL_AVAILABLE:
+            return False
+
         try:
             conn = sqlite3.connect(self.db_path)
-            
+            cursor = conn.cursor()
+
             # Đọc dữ liệu từ database với thứ tự sắp xếp
             order_by = "DESC" if sort_order.upper() == "DESC" else "ASC"
             query = f"SELECT * FROM cong_dan ORDER BY thoi_gian_ghi {order_by}"
-            df = pd.read_sql_query(query, conn)
-            
+            cursor.execute(query)
+            data = cursor.fetchall()
+
+            # Lấy tên cột
+            columns = [desc[0] for desc in cursor.description]
+
             # Đổi tên cột
-            column_names = {
-                'id': 'ID',
-                'so_giay_to': 'Số giấy tờ',
-                'so_cmnd_cu': 'Số CMND cũ',
-                'ho_ten': 'Họ và tên',
-                'gioi_tinh': 'Giới tính',
-                'ngay_sinh': 'Ngày sinh',
-                'noi_thuong_tru': 'Nơi thường trú',
-                'ngay_cap': 'Ngày cấp',
-                'loai_giay_to': 'Loại giấy tờ',
-                'ten_phong': 'Tên phòng',
-                'thoi_gian_ghi': 'Thời gian ghi',
-                'anh_mat_truoc': 'Ảnh mặt trước',
-                'anh_mat_sau': 'Ảnh mặt sau'
-            }
-            df = df.rename(columns=column_names)
+            column_names = [
+                'ID', 'Số giấy tờ', 'Số CMND cũ', 'Họ và tên', 'Giới tính',
+                'Ngày sinh', 'Nơi thường trú', 'Ngày cấp', 'Loại giấy tờ',
+                'Tên phòng', 'Thời gian ghi', 'Ảnh mặt trước', 'Ảnh mặt sau'
+            ]
             
             # Tạo workbook mới
             wb = openpyxl.Workbook()
             ws = wb.active
-            
+
             # Thiết lập font mặc định cho toàn bộ sheet
             ws.font = Font(name='Times New Roman', size=11)
-            
+
             # Ghi header
-            for col, header in enumerate(df.columns, 1):
+            for col, header in enumerate(column_names, 1):
                 cell = ws.cell(row=1, column=col)
                 cell.value = header
                 cell.font = Font(name='Times New Roman', size=12, bold=True)
                 cell.fill = PatternFill(start_color='FFC000', end_color='FFC000', fill_type='solid')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-            
+
             # Ghi dữ liệu
-            for row_idx, row in enumerate(df.values, 2):
+            for row_idx, row in enumerate(data, 2):
                 for col_idx, value in enumerate(row, 1):
                     cell = ws.cell(row=row_idx, column=col_idx)
                     # Xử lý đặc biệt cho cột ảnh
@@ -366,31 +366,31 @@ class Database:
 
     def xuat_excel_tu_ket_qua(self, excel_path, data, sort_order="DESC"):
         """Xuất kết quả tìm kiếm ra file Excel"""
+        if not OPENPYXL_AVAILABLE:
+            return False
+
         try:
-            # Tạo DataFrame từ dữ liệu
-            df = pd.DataFrame(data)
-            
             # Sắp xếp dữ liệu theo thời gian ghi
-            df = df.sort_values(by='thoi_gian_ghi', 
-                              ascending=False if sort_order.upper() == "DESC" else True)
-            
+            sorted_data = sorted(data,
+                               key=lambda x: x.get('thoi_gian_ghi', ''),
+                               reverse=(sort_order.upper() == "DESC"))
+
             # Đổi tên cột
-            column_names = {
-                'id': 'ID',
-                'so_giay_to': 'Số giấy tờ',
-                'so_cmnd_cu': 'Số CMND cũ',
-                'ho_ten': 'Họ và tên',
-                'gioi_tinh': 'Giới tính',
-                'ngay_sinh': 'Ngày sinh',
-                'noi_thuong_tru': 'Nơi thường trú',
-                'ngay_cap': 'Ngày cấp',
-                'loai_giay_to': 'Loại giấy tờ',
-                'ten_phong': 'Tên phòng',
-                'thoi_gian_ghi': 'Thời gian ghi',
-                'anh_mat_truoc': 'Ảnh mặt trước',
-                'anh_mat_sau': 'Ảnh mặt sau'
-            }
-            df = df.rename(columns=column_names)
+            column_names = [
+                'ID', 'Số giấy tờ', 'Số CMND cũ', 'Họ và tên', 'Giới tính',
+                'Ngày sinh', 'Nơi thường trú', 'Ngày cấp', 'Loại giấy tờ',
+                'Tên phòng', 'Thời gian ghi', 'Ảnh mặt trước', 'Ảnh mặt sau'
+            ]
+
+            # Chuyển dict thành list theo thứ tự cột
+            column_keys = ['id', 'so_giay_to', 'so_cmnd_cu', 'ho_ten', 'gioi_tinh',
+                          'ngay_sinh', 'noi_thuong_tru', 'ngay_cap', 'loai_giay_to',
+                          'ten_phong', 'thoi_gian_ghi', 'anh_mat_truoc', 'anh_mat_sau']
+
+            rows_data = []
+            for item in sorted_data:
+                row = [item.get(key, '') for key in column_keys]
+                rows_data.append(row)
             
             # Tạo workbook mới
             wb = openpyxl.Workbook()
@@ -400,15 +400,15 @@ class Database:
             ws.font = Font(name='Times New Roman', size=11)
             
             # Ghi header
-            for col, header in enumerate(df.columns, 1):
+            for col, header in enumerate(column_names, 1):
                 cell = ws.cell(row=1, column=col)
                 cell.value = header
                 cell.font = Font(name='Times New Roman', size=12, bold=True)
                 cell.fill = PatternFill(start_color='FFC000', end_color='FFC000', fill_type='solid')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-            
+
             # Ghi dữ liệu
-            for row_idx, row in enumerate(df.values, 2):
+            for row_idx, row in enumerate(rows_data, 2):
                 for col_idx, value in enumerate(row, 1):
                     cell = ws.cell(row=row_idx, column=col_idx)
                     # Xử lý đặc biệt cho cột ảnh

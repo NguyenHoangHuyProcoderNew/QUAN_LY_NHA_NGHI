@@ -1,0 +1,93 @@
+HƯỚNG DẪN CÀI ĐẶT VBA CODE CHO EXCEL
+=====================================
+
+BƯỚC 1: MỞ VBA EDITOR
+- Nhấn Alt + F11 để mở VBA Editor
+- Hoặc vào Developer tab > Visual Basic
+
+BƯỚC 2: CÀI ĐẶT CODE CHO WORKSHEET EVENT
+----------------------------------------
+1. Trong VBA Editor, tìm sheet "TỔNG HỢP THU - CHI NHÀ NGHỈ" trong cây thư mục bên trái
+2. Double-click vào sheet đó
+3. Copy và paste đoạn code sau vào cửa sổ code:
+
+```vba
+Private Sub Worksheet_Change(ByVal Target As Range)
+    ' [Copy toàn bộ code từ file VBA_TongHopThuChi.bas]
+End Sub
+
+Private Sub TaoBangBaoCao(ws As Worksheet, row As Long, value As Variant)
+    ' [Copy toàn bộ hàm TaoBangBaoCao từ file VBA_TongHopThuChi.bas]
+End Sub
+```
+
+BƯỚC 3: CÀI ĐẶT CODE CHO WORKBOOK EVENT
+---------------------------------------
+1. Trong VBA Editor, double-click vào "ThisWorkbook"
+2. Copy và paste đoạn code sau:
+
+```vba
+Private Sub Workbook_Open()
+    Call DenDongCuoiCung
+End Sub
+```
+
+BƯỚC 4: TẠO MODULE CHO HÀM TIỆN ÍCH
+-----------------------------------
+1. Right-click vào tên project > Insert > Module
+2. Copy và paste hàm DenDongCuoiCung vào module mới:
+
+```vba
+Sub DenDongCuoiCung()
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    
+    Set ws = ActiveSheet
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+    ws.Cells(lastRow + 20, 1).Select
+End Sub
+```
+
+BƯỚC 5: LÀM CHO MACRO HOẠT ĐỘNG
+-------------------------------
+1. Đảm bảo file được lưu với định dạng .xlsm (Excel Macro-Enabled Workbook)
+2. Bật macro khi mở file
+3. Vào File > Options > Trust Center > Trust Center Settings > Macro Settings
+4. Chọn "Enable all macros" hoặc "Disable all macros with notification"
+
+CHỨC NĂNG CỦA CODE:
+==================
+
+1. TỰ ĐỘNG GHI THỜI GIAN:
+   - Khi nhập số tiền vào cột C, thời gian sẽ tự động được ghi vào cột D
+   - Định dạng: dd-mm-yyyy hh:mm:ss
+
+2. TẠO BẢNG BÁO CÁO:
+   - Khi nhập ngày vào cột A, bảng báo cáo sẽ tự động được tạo ở cột H-I
+   - Bảng bao gồm:
+     * Số dư ban đầu tiền mặt/tài khoản
+     * Thu/chi tiền mặt và tài khoản
+     * Tổng thu/chi
+     * Số dư hiện tại
+
+3. DI CHUYỂN ĐẾN DÒNG CUỐI:
+   - Khi mở file, con trỏ sẽ tự động di chuyển đến dòng cuối + 20
+
+LƯU Ý QUAN TRỌNG:
+================
+- Code chỉ hoạt động trên sheet có tên "TỔNG HỢP THU - CHI NHÀ NGHỈ"
+- Đảm bảo cấu trúc dữ liệu đúng:
+  * Cột A: Ngày
+  * Cột C: Số tiền
+  * Cột D: Thời gian (tự động)
+  * Cột E: Loại (Thu/Chi)
+  * Cột F: Phương thức (Tiền mặt/Chuyển khoản)
+- Backup file trước khi cài đặt code
+
+KHẮC PHỤC SỰ CỐ:
+================
+- Nếu code không hoạt động, kiểm tra:
+  1. Macro đã được bật chưa
+  2. Tên sheet có đúng không
+  3. Code có được đặt đúng vị trí không
+- Nếu gặp lỗi, nhấn Ctrl+Break để dừng macro
