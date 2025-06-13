@@ -1,24 +1,25 @@
-@echo off
+﻿@echo off
+chcp 65001 >nul
 setlocal
 
 set "BRANCH=main"
 
-set /p MESSAGE=Nhap thong diep commit: 
+set /p MESSAGE=Nhập thông điệp commit: 
 
 if "%MESSAGE%"=="" (
-  echo Ban chua nhap thong diep commit. Thoat chuong trinh.
+  echo Bạn chưa nhập thông điệp commit. Thoát chương trình.
   goto :eof
 )
 
-echo Adding all changes...
+echo Đang thêm thay đổi...
 git add .
 
-echo Commit voi message: %MESSAGE%
+echo Commit với message: %MESSAGE%
 git commit -m "%MESSAGE%"
 
-echo Dang push len remote...
+echo Đang đẩy lên remote...
 git push origin %BRANCH%
 
-echo Push Code Len Github Thanh Cong !
-<nul set /p= "Nhan phim bat ky de thoat..."
+echo Push code lên GitHub thành công!
+<nul set /p= "Nhấn phím bất kỳ để thoát..."
 pause >nul
